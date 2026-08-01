@@ -23,9 +23,16 @@ describe("packaging: published tarball excludes tests and dev config (plan C4)",
     expect(paths.some((p) => p.startsWith("coverage/"))).toBe(false);
     expect(paths).not.toContain("tsconfig.json");
     expect(paths).not.toContain("vitest.config.ts");
+    expect(paths).not.toContain("vitest.smoke.config.ts");
+    expect(paths).not.toContain("docs/CONFIG_REFERENCE.md");
+    expect(paths).not.toContain("docs/CONFIGURATION.md");
 
     // MUST ship the runtime entry point and config.
+    expect(paths).toContain("package.json");
+    expect(paths).toContain("README.md");
+    expect(paths).toContain("LICENSE");
     expect(paths).toContain("src/index.ts");
+    expect(paths).toContain("src/router/config.ts");
     expect(paths).toContain("tiers.json");
   });
 });
