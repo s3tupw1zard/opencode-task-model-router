@@ -8,7 +8,7 @@
 
 ## What these are
 
-`opencode-model-router` ships with enforcement **OFF by default** — with no
+`opencode-task-model-router` ships with enforcement **OFF by default** — with no
 `enforcement` key in `tiers.json`, the plugin behaves exactly as it did before the
 enforcement work (byte-for-byte identical routing; see GA-1). The blocks below are
 **opt-in, copy-paste examples** you can add under the root of your `tiers.json` to
@@ -17,7 +17,7 @@ turn the three enforcement layers on with a posture that suits a given workflow.
 > **These presets are not injected into `tiers.json` automatically, and selecting a
 > routing mode (`/budget`, `/budget quality`, …) does NOT enable enforcement.** A
 > routing mode only changes which tier work is routed to; enforcement is enabled
-> *only* by an explicit `enforcement` block, `MODEL_ROUTER_ENFORCE=1`, or
+> *only* by an explicit `enforcement` block, `TASK_MODEL_ROUTER_ENFORCE=1`, or
 > `/router enforce <advisory|enforced>`. No preset silently forces enforcement on.
 >
 > They are documented here (rather than written into `tiers.json`) so adopting them
@@ -183,7 +183,7 @@ tune for real:
    blocking) and run a representative workload (aim for N ≥ 20 delegations per
    tier/task-type).
 2. Read the per-delegation **scorecards** and **trajectory** records the plugin
-   writes under the OS temp dir (`…/opencode-model-router-trajectory/*.scorecard.log`
+   writes under the OS temp dir (`…/opencode-task-model-router-trajectory/*.scorecard.log`
    and `*.delegate.log`), plus the trajectory metrics (`ttfa`, `read_exec_ratio`,
    `self_script_count`, `attempts`, `escalations`, `final_tier`, `cost_units`,
    `verdict`, `verify_method`, `grader_tier`).

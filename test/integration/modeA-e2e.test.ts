@@ -80,8 +80,8 @@ describe("Mode A end-to-end enforcement loop", () => {
     savedUserProfile = process.env.USERPROFILE;
     process.env.HOME = dir;
     process.env.USERPROFILE = dir;
-    delete process.env.MODEL_ROUTER_ENFORCE;
-    process.env.MODEL_ROUTER_VERIFIED_DELEGATE = "1";
+    delete process.env.TASK_MODEL_ROUTER_ENFORCE;
+    process.env.TASK_MODEL_ROUTER_VERIFIED_DELEGATE = "1";
     invalidateConfigCache();
   });
 
@@ -96,8 +96,8 @@ describe("Mode A end-to-end enforcement loop", () => {
     } else {
       delete process.env.USERPROFILE;
     }
-    delete process.env.MODEL_ROUTER_ENFORCE;
-    delete process.env.MODEL_ROUTER_VERIFIED_DELEGATE;
+    delete process.env.TASK_MODEL_ROUTER_ENFORCE;
+    delete process.env.TASK_MODEL_ROUTER_VERIFIED_DELEGATE;
     invalidateConfigCache();
     try {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -190,7 +190,7 @@ describe("Mode A end-to-end enforcement loop", () => {
       makeCtxWithQueues(dir, [], [], counters) as any,
     );
 
-    process.env.MODEL_ROUTER_ENFORCE = "1";
+    process.env.TASK_MODEL_ROUTER_ENFORCE = "1";
     invalidateConfigCache();
 
     await hooks["chat.message"](

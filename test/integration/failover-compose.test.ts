@@ -62,8 +62,8 @@ describe("Phase 3.3 — provider-failover / quality-escalation orthogonality", (
     savedUserProfile = process.env.USERPROFILE;
     process.env.HOME = dir;
     process.env.USERPROFILE = dir;
-    delete process.env.MODEL_ROUTER_ENFORCE;
-    process.env.MODEL_ROUTER_VERIFIED_DELEGATE = "1";
+    delete process.env.TASK_MODEL_ROUTER_ENFORCE;
+    process.env.TASK_MODEL_ROUTER_VERIFIED_DELEGATE = "1";
     invalidateConfigCache();
   });
 
@@ -78,8 +78,8 @@ describe("Phase 3.3 — provider-failover / quality-escalation orthogonality", (
     } else {
       delete process.env.USERPROFILE;
     }
-    delete process.env.MODEL_ROUTER_ENFORCE;
-    delete process.env.MODEL_ROUTER_VERIFIED_DELEGATE;
+    delete process.env.TASK_MODEL_ROUTER_ENFORCE;
+    delete process.env.TASK_MODEL_ROUTER_VERIFIED_DELEGATE;
     invalidateConfigCache();
     try {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -130,7 +130,7 @@ describe("Phase 3.3 — provider-failover / quality-escalation orthogonality", (
       };
     };
 
-    process.env.MODEL_ROUTER_ENFORCE = "1";
+    process.env.TASK_MODEL_ROUTER_ENFORCE = "1";
     const hooks: any = await ModelRouterPlugin(
       makeCtxCustom(dir, promptHandler) as any,
     );
@@ -228,7 +228,7 @@ describe("Phase 3.3 — provider-failover / quality-escalation orthogonality", (
       };
     };
 
-    process.env.MODEL_ROUTER_ENFORCE = "1";
+    process.env.TASK_MODEL_ROUTER_ENFORCE = "1";
     const hooks: any = await ModelRouterPlugin(
       makeCtxCustom(dir, promptHandler) as any,
     );

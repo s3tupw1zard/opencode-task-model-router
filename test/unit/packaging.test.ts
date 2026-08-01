@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+
+interface PackResult {
+  name: string;
+  version: string;
+  filename: string;
+  files: Array<{ path: string }>;
+}
 
 // Plan C4 / R9: tests and dev-only config must NEVER ship in the npm package.
 // The package.json `files` allowlist is the mechanism; this test is the guard
@@ -11,7 +19,13 @@ describe("packaging: published tarball excludes tests and dev config (plan C4)",
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
-    const parsed = JSON.parse(raw) as Array<{ files: Array<{ path: string }> }>;
+    const parsed = JSON.parse(raw) as PackResult[];
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]).toMatchObject({
+      name: "opencode-task-model-router",
+      version: "1.3.0",
+      filename: "opencode-task-model-router-1.3.0.tgz",
+    });
     const paths = parsed
       .flatMap((p) => p.files.map((f) => f.path.replace(/\\/g, "/")))
       .sort();
@@ -34,5 +48,48 @@ describe("packaging: published tarball excludes tests and dev config (plan C4)",
     expect(paths).toContain("src/index.ts");
     expect(paths).toContain("src/router/config.ts");
     expect(paths).toContain("tiers.json");
+  });
+
+  it("publishes the fork identity while preserving upstream attribution", () => {
+    const pkg = JSON.parse(readFileSync("package.json", "utf8")) as {
+      name: string;
+      version: string;
+      author: { name: string; url: string };
+      contributors: Array<{ name: string; url: string }>;
+      repository: { url: string };
+      homepage: string;
+      bugs: { url: string };
+    };
+
+    expect(pkg).toMatchObject({
+      name: "opencode-task-model-router",
+      version: "1.3.0",
+      author: {
+        name: "s3tupw1zard",
+        url: "https://github.com/s3tupw1zard",
+      },
+      repository: {
+        url: "git+https://github.com/s3tupw1zard/opencode-task-model-router.git",
+      },
+      homepage: "https://github.com/s3tupw1zard/opencode-task-model-router",
+      bugs: {
+        url: "https://github.com/s3tupw1zard/opencode-task-model-router/issues",
+      },
+    });
+    expect(pkg.contributors).toContainEqual({
+      name: "Marco Jardim",
+      url: "https://github.com/marco-jardim",
+    });
+    expect(JSON.stringify(pkg)).not.toContain(
+      "github.com/marco-jardim/opencode-model-router",
+    );
+
+    const readme = readFileSync("README.md", "utf8");
+    expect(readme).toContain("npm install -g opencode-task-model-router");
+    expect(readme).toContain('"plugin": ["opencode-task-model-router"]');
+
+    const license = readFileSync("LICENSE", "utf8");
+    expect(license).toContain("opencode-task-model-router - OpenCode plugin");
+    expect(license).toContain("Copyright (C) 2026  Marco Jardim");
   });
 });

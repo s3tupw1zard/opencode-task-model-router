@@ -76,6 +76,9 @@ export interface RouterState {
   enforcementMode?: "off" | "advisory" | "enforced";
 }
 
+export const STATE_FILE_NAME = "opencode-task-model-router.state.json";
+export const LEGACY_STATE_FILE_NAME = "opencode-model-router.state.json";
+
 // ---------------------------------------------------------------------------
 // Config loader with caching
 // ---------------------------------------------------------------------------
@@ -98,12 +101,11 @@ export function configPath(): string {
 }
 
 export function statePath(): string {
-  return join(
-    homedir(),
-    ".config",
-    "opencode",
-    "opencode-model-router.state.json",
-  );
+  return join(homedir(), ".config", "opencode", STATE_FILE_NAME);
+}
+
+export function legacyStatePath(): string {
+  return join(homedir(), ".config", "opencode", LEGACY_STATE_FILE_NAME);
 }
 
 export function resolvePresetName(
@@ -415,26 +417,18 @@ export function loadConfig(): RouterConfig {
   const raw = JSON.parse(readFileSync(configPath(), "utf-8"));
   const cfg = validateConfig(raw);
 
-  try {
-    if (existsSync(statePath())) {
-      const state = JSON.parse(
-        readFileSync(statePath(), "utf-8"),
-      ) as RouterState;
-      if (state.activePreset) {
-        const resolved = resolvePresetName(cfg, state.activePreset);
-        if (resolved) {
-          cfg.activePreset = resolved;
-        }
-      }
-      if (state.activeMode && cfg.modes?.[state.activeMode]) {
-        cfg.activeMode = state.activeMode;
-      }
-      if (state.enforcementMode) {
-        cfg.enforcement = { ...(cfg.enforcement ?? {}), mode: state.enforcementMode };
-      }
+  const state = readState();
+  if (state.activePreset) {
+    const resolved = resolvePresetName(cfg, state.activePreset);
+    if (resolved) {
+      cfg.activePreset = resolved;
     }
-  } catch {
-    // Ignore state read errors and keep tiers.json defaults
+  }
+  if (state.activeMode && cfg.modes?.[state.activeMode]) {
+    cfg.activeMode = state.activeMode;
+  }
+  if (state.enforcementMode) {
+    cfg.enforcement = { ...(cfg.enforcement ?? {}), mode: state.enforcementMode };
   }
 
   _cachedConfig = cfg;
@@ -446,26 +440,73 @@ export function loadConfig(): RouterConfig {
 // State persistence helpers
 // ---------------------------------------------------------------------------
 
-/** Read current persisted state (or empty object on failure). */
-export function readState(): RouterState {
-  try {
-    if (existsSync(statePath())) {
-      return JSON.parse(readFileSync(statePath(), "utf-8")) as RouterState;
-    }
-  } catch {
-    // ignore
+function parseState(raw: unknown): RouterState {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return {};
   }
-  return {};
+
+  const input = raw as Record<string, unknown>;
+  const state: RouterState = {};
+  if (typeof input.activePreset === "string" && input.activePreset.trim()) {
+    state.activePreset = input.activePreset.trim();
+  }
+  if (typeof input.activeMode === "string" && input.activeMode.trim()) {
+    state.activeMode = input.activeMode.trim();
+  }
+  if (
+    input.enforcementMode === "off" ||
+    input.enforcementMode === "advisory" ||
+    input.enforcementMode === "enforced"
+  ) {
+    state.enforcementMode = input.enforcementMode;
+  }
+  return state;
+}
+
+function readStateFile(path: string): RouterState {
+  return parseState(JSON.parse(readFileSync(path, "utf-8")));
+}
+
+function writeStateFile(path: string, state: RouterState): void {
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  writeFileSync(tmp, JSON.stringify(state, null, 2) + "\n", "utf-8");
+  renameSync(tmp, path);
+}
+
+/** Read current persisted state, importing legacy state once when needed. */
+export function readState(): RouterState {
+  const currentPath = statePath();
+  if (existsSync(currentPath)) {
+    try {
+      return readStateFile(currentPath);
+    } catch {
+      return {};
+    }
+  }
+
+  const oldPath = legacyStatePath();
+  if (!existsSync(oldPath)) return {};
+
+  try {
+    const state = readStateFile(oldPath);
+    if (Object.keys(state).length > 0) {
+      try {
+        writeStateFile(currentPath, state);
+      } catch {
+        // Use valid legacy state for this process even if migration cannot persist.
+      }
+    }
+    return state;
+  } catch {
+    return {};
+  }
 }
 
 /** Write state to disk atomically (merges with existing keys). */
 export function writeState(patch: Partial<RouterState>): void {
-  const state = { ...readState(), ...patch };
-  const p = statePath();
-  mkdirSync(dirname(p), { recursive: true });
-  const tmp = `${p}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  writeFileSync(tmp, JSON.stringify(state, null, 2) + "\n", "utf-8");
-  renameSync(tmp, p);
+  const state = parseState({ ...readState(), ...patch });
+  writeStateFile(statePath(), state);
 }
 
 // ---------------------------------------------------------------------------

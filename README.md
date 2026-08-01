@@ -1,4 +1,4 @@
-# opencode-model-router
+# opencode-task-model-router
 
 > **Use the cheapest model that can do the job. Automatically.**
 
@@ -6,7 +6,7 @@ An [OpenCode](https://opencode.ai) plugin that routes every coding task to the r
 
 ## Why it's different
 
-Most AI coding tools give you one model for everything. You pay Opus prices to run `grep`. opencode-model-router changes that with a stack of interlocking ideas:
+Most AI coding tools give you one model for everything. You pay Opus prices to run `grep`. opencode-task-model-router changes that with a stack of interlocking ideas:
 
 **Use a mid-tier model as orchestrator.**
 The orchestrator runs on *every* message. Put Sonnet there, not Opus. Sonnet reads a routing protocol and delegates just as well as Opus — at 4x lower cost. Reserve Opus for when it genuinely matters.
@@ -57,7 +57,7 @@ If you're running Opus (20x cost) for all of it, you're overpaying by **3-10x** 
 
 ## The solution
 
-opencode-model-router injects a **delegation protocol** into the system prompt that teaches the orchestrator to:
+opencode-task-model-router injects a **delegation protocol** into the system prompt that teaches the orchestrator to:
 
 1. **Match task to tier** using a configurable task taxonomy
 2. **Split composite tasks** — explore first with a cheap model, then implement with a mid-tier model
@@ -157,7 +157,7 @@ With router → split:
 
 ## Why not just use another orchestrator?
 
-| Feature | model-router | Claude native | oh-my-opencode | GSD | ralph-loop |
+| Feature | task-model-router | Claude native | oh-my-opencode | GSD | ralph-loop |
 |---------|:---:|:---:|:---:|:---:|:---:|
 | Multi-tier cost routing | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Configurable task taxonomy | ✅ | ❌ | ❌ | ❌ | ❌ |
@@ -176,7 +176,7 @@ With router → split:
 
 **ralph-loop**: iterative feedback-loop orchestrator. Excellent at self-correction and quality verification. No tier routing — every loop iteration runs on the same model regardless of task complexity.
 
-**The core difference**: the others optimize for *how* the agent works (style, speed, quality loops). model-router optimizes for *what it costs* — with zero compromise on quality, because you can always put Opus in the heavy tier.
+**The core difference**: the others optimize for *how* the agent works (style, speed, quality loops). task-model-router optimizes for *what it costs* — with zero compromise on quality, because you can always put Opus in the heavy tier.
 
 ## Recommended setup
 
@@ -192,46 +192,47 @@ In your `opencode.json`:
 }
 ```
 
-Then install and configure model-router to handle the rest.
+Then install and configure task-model-router to handle the rest.
 
 ## Installation
 
 ### From npm (recommended)
 ```bash
 # In your opencode project or globally
-npm install -g opencode-model-router
+npm install -g opencode-task-model-router
 ```
 
 Add to `~/.config/opencode/opencode.json`:
 ```json
 {
-  "plugin": {
-    "opencode-model-router": {
-      "type": "npm",
-      "package": "opencode-model-router"
-    }
-  }
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["opencode-task-model-router"]
 }
 ```
 
 ### Local clone
 ```bash
-git clone https://github.com/your-username/opencode-model-router
-cd opencode-model-router
+git clone https://github.com/s3tupw1zard/opencode-task-model-router
+cd opencode-task-model-router
 npm install
 ```
 
 In `~/.config/opencode/opencode.json`:
 ```json
 {
-  "plugin": {
-    "opencode-model-router": {
-      "type": "local",
-      "path": "/absolute/path/to/opencode-model-router"
-    }
-  }
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["file:///absolute/path/to/opencode-task-model-router/src/index.ts"]
 }
 ```
+
+### Upgrading from `opencode-model-router`
+
+Replace the old plugin entry instead of loading both packages. On first start,
+valid preset, routing-mode, and enforcement selections are copied from
+`~/.config/opencode/opencode-model-router.state.json` to
+`~/.config/opencode/opencode-task-model-router.state.json`; the old file is left
+untouched. Environment variables have moved from `MODEL_ROUTER_*` to
+`TASK_MODEL_ROUTER_*` and must be updated explicitly.
 
 ## Configuration
 
@@ -530,7 +531,7 @@ The router counters this on two layers:
 
 - Logs a warning to the plugin console:
   ```
-  [model-router] narration detected (session abc123): "Still writing the auth", "Now I'll add the tests"
+  [task-model-router] narration detected (session abc123): "Still writing the auth", "Now I'll add the tests"
   ```
 - Appends a visible banner to the text as it's rendered to the user:
   ```
@@ -591,7 +592,7 @@ The read-only cap banners described above are advisory: a well-behaved subagent 
 
 ### Two operating modes
 
-- **Mode A — on-the-fly.** The orchestrator delegates through the native `Task()` tool — observed and verified automatically by the enforcement pipeline, and rendered inline in the TUI. (An optional, independently-verified `delegate` tool can be enabled via `experimental.verifiedDelegateTool` in `tiers.json` or `MODEL_ROUTER_VERIFIED_DELEGATE=1`; it is hidden by default so delegation stays visible.)
+- **Mode A — on-the-fly.** The orchestrator delegates through the native `Task()` tool — observed and verified automatically by the enforcement pipeline, and rendered inline in the TUI. (An optional, independently-verified `delegate` tool can be enabled via `experimental.verifiedDelegateTool` in `tiers.json` or `TASK_MODEL_ROUTER_VERIFIED_DELEGATE=1`; it is hidden by default so delegation stays visible.)
 - **Mode B — plan-annotated.** `/annotate-plan` emits `[tier:X]` plus an `[acceptance]` block per task; the enforcement loop is wired up at execution time based on those annotations.
 
 ### Tuning enforcement
@@ -599,7 +600,7 @@ The read-only cap banners described above are advisory: a well-behaved subagent 
 Advisory is the default. To change the level:
 
 1. Add or edit the `enforcement` block in `tiers.json` — `"mode": "off"`, `"advisory"`, or `"enforced"` (see `docs/CONFIG_REFERENCE.md`).
-2. Set `MODEL_ROUTER_ENFORCE=1` to force `enforced` for a session, or `MODEL_ROUTER_ENFORCE=0` to force `off`.
+2. Set `TASK_MODEL_ROUTER_ENFORCE=1` to force `enforced` for a session, or `TASK_MODEL_ROUTER_ENFORCE=0` to force `off`.
 3. Run `/router enforce <off|advisory|enforced>` from the chat to toggle at runtime.
 
 **Modes:** `off` — no-op, byte-for-byte-unchanged routing (must now be set explicitly, since `advisory` is the default); `advisory` (default) — evaluates and surfaces guidance, never blocks; `enforced` — hard-blocks active, full produce → verify → accept/escalate pipeline.

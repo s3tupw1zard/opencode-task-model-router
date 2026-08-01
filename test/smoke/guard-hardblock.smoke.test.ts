@@ -60,7 +60,7 @@ d("guard hard-block smoke", () => {
         ],
         {
           cwd: REPO_ROOT,
-          env: { ...process.env, MODEL_ROUTER_ENFORCE: "1" },
+          env: { ...process.env, TASK_MODEL_ROUTER_ENFORCE: "1" },
           encoding: "utf8",
           maxBuffer: 20 * 1024 * 1024,
           timeout: 180_000,

@@ -89,6 +89,7 @@ describe("router-command integration", () => {
   it("bare /router shows status", async () => {
     const out = { parts: [] as any[] };
     await hooks["command.execute.before"]({ command: "router", arguments: "" }, out);
+    expect(out.parts[0].text).toContain("# Task Model Router");
     expect(out.parts[0].text).toContain("Enforcement:");
   });
 
@@ -131,7 +132,7 @@ describe("router-command integration", () => {
     expect(text).toContain("@medium -> openai/gpt-5.5-fast");
     expect(text).toContain("@heavy -> openai/gpt-5.5-fast");
     expect(text).toContain(
-      "~/.config/opencode/opencode-model-router.state.json",
+      "~/.config/opencode/opencode-task-model-router.state.json",
     );
     expect(text).toContain("Restart OpenCode");
     expect(readState().activePreset).toBe("openai");
@@ -178,7 +179,9 @@ describe("router-command integration", () => {
       model: { providerID: "openai", modelID: "gpt-5" },
     };
 
-    expect(await runCommand("bypass", "on")).toContain("Bypass: ON");
+    const bypassOn = await runCommand("bypass", "on");
+    expect(bypassOn).toContain("Bypass: ON");
+    expect(bypassOn).toContain("Task Model Router is **bypassed**");
     const bypassed = { system: [] as string[] };
     await systemHook(input, bypassed);
     expect(bypassed.system).toEqual([]);

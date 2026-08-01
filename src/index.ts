@@ -5,6 +5,7 @@ import {
   loadConfig,
   resolvePresetName,
   writeState,
+  STATE_FILE_NAME,
   invalidateConfigCache,
 } from "./router/config";
 import type { RouterConfig, TierConfig, Preset, ModeConfig } from "./router/config";
@@ -50,6 +51,8 @@ import {
   buildAcceptedSuffix,
 } from "./verify/dispatch";
 import { newLadderState, recordAttempt, nextAction, advance, buildEscalatePolicy, formatLadderScorecard } from "./escalate/ladder";
+
+const TRAJECTORY_DIR_NAME = "opencode-task-model-router-trajectory";
 
 // ---------------------------------------------------------------------------
 // Re-exports — type-only re-exports for IDE/test consumers.
@@ -115,7 +118,7 @@ function buildRouterOutput(cfg: RouterConfig, args: string): string {
         "",
         desc,
         "",
-        "Note: the `MODEL_ROUTER_ENFORCE` env var, when set to `0` or `1`, overrides this setting.",
+        "Note: the `TASK_MODEL_ROUTER_ENFORCE` env var, when set to `0` or `1`, overrides this setting.",
       ].join("\n");
     }
     const current = resolveEnforcementMode({ config: cfg, env: process.env }).mode;
@@ -127,7 +130,7 @@ function buildRouterOutput(cfg: RouterConfig, args: string): string {
   }
   const current = resolveEnforcementMode({ config: cfg, env: process.env }).mode;
   return [
-    `# Model Router`,
+    `# Task Model Router`,
     `Enforcement: **${current}**`,
     "",
     "Commands:",
@@ -277,7 +280,7 @@ function buildPresetOutput(cfg: RouterConfig, args: string): string {
       "",
       models,
       "",
-      "Selection is now persisted in ~/.config/opencode/opencode-model-router.state.json.",
+      `Selection is now persisted in ~/.config/opencode/${STATE_FILE_NAME}.`,
       "Restart OpenCode for subagent model registration to take effect.",
       "System prompt delegation rules update immediately.",
     ].join("\n");
@@ -300,7 +303,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
   // Per-plugin-instance trajectory store (Phase 0.3 scaffolding — RECORD-ONLY).
   // Observes subagent tool activity to build a per-session scorecard. It emits
   // NOTHING into any model-visible output; the only externally observable effect
-  // is an opt-in debug dump gated behind MODEL_ROUTER_TRAJECTORY_DEBUG=1.
+  // is an opt-in debug dump gated behind TASK_MODEL_ROUTER_TRAJECTORY_DEBUG=1.
   const trajectoryStore = createTrajectoryStore();
 
   // Per-plugin-instance guard state (Layer 1 hard-block). Only engaged for
@@ -409,7 +412,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
   ): void => {
     try {
       const line = formatLadderScorecard(st, accepted, method);
-      const dir = join(tmpdir(), "opencode-model-router-trajectory");
+      const dir = join(tmpdir(), TRAJECTORY_DIR_NAME);
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, `${sid}.delegate.log`), line + "\n", { flag: "a" });
     } catch {
@@ -424,7 +427,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
 
   const enableDelegateTool =
     cfg.experimental?.verifiedDelegateTool === true ||
-    process.env.MODEL_ROUTER_VERIFIED_DELEGATE === "1";
+    process.env.TASK_MODEL_ROUTER_VERIFIED_DELEGATE === "1";
 
   return {
     tool: {
@@ -824,7 +827,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
 
     // -----------------------------------------------------------------------
     // Gated trajectory debug dump (Phase 0.3, T0.3.3) — RECORD-ONLY, OPT-IN.
-    // No-op unless MODEL_ROUTER_TRAJECTORY_DEBUG=1. On session.idle, writes the
+    // No-op unless TASK_MODEL_ROUTER_TRAJECTORY_DEBUG=1. On session.idle, writes the
     // session's trajectory scorecard to a throwaway file under the OS temp dir
     // for manual inspection. Best-effort; never throws into the session.
     // Emits nothing model-visible, so GA-1 (no-regression) is preserved.
@@ -839,7 +842,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
         const gstate = guardStore.get(sid);
         if (gstate) {
           const line = formatScorecard(gstate, sessionStore.getTier(sid));
-          const dir = join(tmpdir(), "opencode-model-router-trajectory");
+          const dir = join(tmpdir(), TRAJECTORY_DIR_NAME);
           mkdirSync(dir, { recursive: true });
           writeFileSync(join(dir, `${sid}.scorecard.log`), line + "\n", { flag: "a" });
         }
@@ -848,11 +851,11 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       }
 
       // Opt-in full trajectory dump (unchanged gating).
-      if (process.env.MODEL_ROUTER_TRAJECTORY_DEBUG !== "1") return;
+      if (process.env.TASK_MODEL_ROUTER_TRAJECTORY_DEBUG !== "1") return;
       const dump = trajectoryStore.dump(sid);
       if (!dump) return;
       try {
-        const dir = join(tmpdir(), "opencode-model-router-trajectory");
+        const dir = join(tmpdir(), TRAJECTORY_DIR_NAME);
         mkdirSync(dir, { recursive: true });
         writeFileSync(join(dir, `${sid}.log`), dump + "\n", { flag: "a" });
       } catch {
@@ -923,7 +926,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       opencodeConfig.command["bypass"] = {
         template: "$ARGUMENTS",
         description:
-          "Toggle model-router bypass (disables delegation protocol for this session)",
+          "Toggle Task Model Router bypass (disables delegation protocol for this session)",
       };
       opencodeConfig.command["annotate-plan"] = {
         template: [
@@ -964,7 +967,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       };
       opencodeConfig.command["router"] = {
         template: "$ARGUMENTS",
-        description: "Model-router controls (e.g., /router enforce off|advisory|enforced)",
+        description: "Task Model Router controls (e.g., /router enforce off|advisory|enforced)",
       };
     },
 
@@ -1034,8 +1037,8 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
         }
         const status = bypassed ? "ON" : "OFF";
         const desc = bypassed
-          ? "Model-router is **bypassed**. Delegation protocol, cap enforcement, and narration detection are disabled. The model will run without routing rules until you run `/bypass off` or restart OpenCode."
-          : "Model-router is **active**. Delegation protocol and all enforcement rules are in effect.";
+          ? "Task Model Router is **bypassed**. Delegation protocol, cap enforcement, and narration detection are disabled. The model will run without routing rules until you run `/bypass off` or restart OpenCode."
+          : "Task Model Router is **active**. Delegation protocol and all enforcement rules are in effect.";
         output.parts.push({
           type: "text" as const,
           text: `# Bypass: ${status}\n\n${desc}`,

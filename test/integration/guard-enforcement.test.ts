@@ -38,7 +38,7 @@ describe("guard-enforcement integration", () => {
   it("2: OFF via env='0' wins over enforced config", () => {
     const store = createGuardStore();
     const cfg = { enforcement: { mode: "enforced" } } as unknown as RouterConfig;
-    const env = { MODEL_ROUTER_ENFORCE: "0" };
+    const env = { TASK_MODEL_ROUTER_ENFORCE: "0" };
     const r = guardBeforeCall({
       cfg,
       tier: null,
@@ -56,7 +56,7 @@ describe("guard-enforcement integration", () => {
   it("3: ENFORCED via env='1' + self-script bash => block with anti_self_script", () => {
     const store = createGuardStore();
     const cfg = {} as unknown as RouterConfig;
-    const env = { MODEL_ROUTER_ENFORCE: "1" };
+    const env = { TASK_MODEL_ROUTER_ENFORCE: "1" };
     const r = guardBeforeCall({
       cfg,
       tier: null,

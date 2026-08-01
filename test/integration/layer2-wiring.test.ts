@@ -56,9 +56,9 @@ describe("Layer-2 wiring", () => {
     // Redirect homedir so loadConfig never reads the real user state file.
     process.env.HOME = dir;
     process.env.USERPROFILE = dir;
-    // Ensure MODEL_ROUTER_ENFORCE is clean (tests that need it set it themselves).
-    delete process.env.MODEL_ROUTER_ENFORCE;
-    process.env.MODEL_ROUTER_VERIFIED_DELEGATE = "1";
+    // Ensure TASK_MODEL_ROUTER_ENFORCE is clean (tests that need it set it themselves).
+    delete process.env.TASK_MODEL_ROUTER_ENFORCE;
+    process.env.TASK_MODEL_ROUTER_VERIFIED_DELEGATE = "1";
     invalidateConfigCache();
   });
 
@@ -75,8 +75,8 @@ describe("Layer-2 wiring", () => {
       delete process.env.USERPROFILE;
     }
     // Clean up enforcement override.
-    delete process.env.MODEL_ROUTER_ENFORCE;
-    delete process.env.MODEL_ROUTER_VERIFIED_DELEGATE;
+    delete process.env.TASK_MODEL_ROUTER_ENFORCE;
+    delete process.env.TASK_MODEL_ROUTER_VERIFIED_DELEGATE;
     invalidateConfigCache();
     // Best-effort temp dir removal.
     try {
@@ -92,7 +92,7 @@ describe("Layer-2 wiring", () => {
 
   describe("Option (i) verify-dispatch — tool.execute.after", () => {
     it("CASE A: appends forcing note when deterministic DoD FAILS (file missing)", async () => {
-      process.env.MODEL_ROUTER_ENFORCE = "1";
+      process.env.TASK_MODEL_ROUTER_ENFORCE = "1";
       const hooks: any = await ModelRouterPlugin(makeCtx(dir, "grader/producer reply") as any);
 
       const input = {
@@ -115,7 +115,7 @@ describe("Layer-2 wiring", () => {
     });
 
     it("CASE B: does NOT append note when deterministic DoD PASSES (file exists)", async () => {
-      process.env.MODEL_ROUTER_ENFORCE = "1";
+      process.env.TASK_MODEL_ROUTER_ENFORCE = "1";
       fs.writeFileSync(path.join(dir, "present-file.txt"), "ok");
       const hooks: any = await ModelRouterPlugin(makeCtx(dir, "grader/producer reply") as any);
 
@@ -142,7 +142,7 @@ describe("Layer-2 wiring", () => {
 
     it("CASE C: is a no-op when enforcement is OFF (GA-1 preserved)", async () => {
       // Pin to "off" mode so shouldVerifyTask returns false and the verify block is skipped.
-      process.env.MODEL_ROUTER_ENFORCE = "0";
+      process.env.TASK_MODEL_ROUTER_ENFORCE = "0";
       const hooks: any = await ModelRouterPlugin(makeCtx(dir, "grader/producer reply") as any);
 
       const input = {
