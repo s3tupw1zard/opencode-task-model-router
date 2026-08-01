@@ -81,7 +81,7 @@ Thrown messages and banners pass through `scrubText` (redacts API keys / bearer 
 
 ```sh
 # environment variable
-MODEL_ROUTER_ENFORCE=1
+TASK_MODEL_ROUTER_ENFORCE=1
 ```
 
 ```

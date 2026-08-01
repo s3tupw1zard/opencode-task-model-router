@@ -50,6 +50,9 @@ const PRESETS = {
 } as const;
 
 const ROUTER_ENV_KEYS = [
+  "TASK_MODEL_ROUTER_ENFORCE",
+  "TASK_MODEL_ROUTER_VERIFIED_DELEGATE",
+  "TASK_MODEL_ROUTER_TRAJECTORY_DEBUG",
   "MODEL_ROUTER_ENFORCE",
   "MODEL_ROUTER_VERIFIED_DELEGATE",
   "MODEL_ROUTER_TRAJECTORY_DEBUG",
@@ -228,5 +231,13 @@ describe.sequential("config hook characterization", () => {
     expect(agent).not.toHaveProperty("options");
     expect(agent?.prompt).toBe(`${prefix}\n\n---\n\nCUSTOM FAST PROMPT`);
     expect(agent?.prompt).not.toContain("ROLE: You are @fast");
+  });
+
+  it("does not enable the delegate tool through the old environment variable", async () => {
+    process.env.MODEL_ROUTER_VERIFIED_DELEGATE = "1";
+
+    const hooks = await ModelRouterPlugin(fakePluginInput(home));
+
+    expect(hooks.tool?.delegate).toBeUndefined();
   });
 });

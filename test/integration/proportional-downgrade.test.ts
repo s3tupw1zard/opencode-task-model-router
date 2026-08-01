@@ -7,17 +7,17 @@ describe("proportional-downgrade integration", () => {
   let savedEnforce: string | undefined;
 
   beforeEach(async () => {
-    savedEnforce = process.env.MODEL_ROUTER_ENFORCE;
+    savedEnforce = process.env.TASK_MODEL_ROUTER_ENFORCE;
     // Force enforced via env gate so guard fires when not trivial.
-    process.env.MODEL_ROUTER_ENFORCE = "1";
+    process.env.TASK_MODEL_ROUTER_ENFORCE = "1";
     hooks = await ModelRouterPlugin({} as any);
   });
 
   afterEach(() => {
     if (savedEnforce === undefined) {
-      delete process.env.MODEL_ROUTER_ENFORCE;
+      delete process.env.TASK_MODEL_ROUTER_ENFORCE;
     } else {
-      process.env.MODEL_ROUTER_ENFORCE = savedEnforce;
+      process.env.TASK_MODEL_ROUTER_ENFORCE = savedEnforce;
     }
   });
 

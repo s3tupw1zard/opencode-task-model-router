@@ -128,9 +128,9 @@ describe("enforcement presets (docs/ENFORCEMENT_PRESETS.md)", () => {
   });
 
   it("no preset enables enforcement when the env gate forces off (override)", () => {
-    // Selecting a preset never overrides an explicit MODEL_ROUTER_ENFORCE=0.
+    // Selecting a preset never overrides an explicit TASK_MODEL_ROUTER_ENFORCE=0.
     const cfg = validated("quality");
-    const env = { MODEL_ROUTER_ENFORCE: "0" };
+    const env = { TASK_MODEL_ROUTER_ENFORCE: "0" };
     expect(resolveEnforcementMode({ config: cfg, tier: "medium", env }).mode).toBe("off");
   });
 });

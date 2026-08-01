@@ -24,8 +24,8 @@ function cfg(enforcement?: RouterConfig["enforcement"]): RouterConfig {
 // ---------------------------------------------------------------------------
 
 describe("DEFAULT_ENV_GATE", () => {
-  it("is MODEL_ROUTER_ENFORCE", () => {
-    expect(DEFAULT_ENV_GATE).toBe("MODEL_ROUTER_ENFORCE");
+  it("is TASK_MODEL_ROUTER_ENFORCE", () => {
+    expect(DEFAULT_ENV_GATE).toBe("TASK_MODEL_ROUTER_ENFORCE");
   });
 });
 
@@ -37,7 +37,7 @@ describe("resolveEnforcementMode — env gate overrides", () => {
   it('env="1" returns enforced regardless of config mode "off"', () => {
     const result = resolveEnforcementMode({
       config: cfg({ mode: "off" }),
-      env: { MODEL_ROUTER_ENFORCE: "1" },
+      env: { TASK_MODEL_ROUTER_ENFORCE: "1" },
     });
     expect(result.mode).toBe("enforced");
     expect(result.warning).toBeUndefined();
@@ -47,7 +47,7 @@ describe("resolveEnforcementMode — env gate overrides", () => {
     const result = resolveEnforcementMode({
       config: cfg({ mode: "off", perTier: { fast: "advisory" } }),
       tier: "fast",
-      env: { MODEL_ROUTER_ENFORCE: "1" },
+      env: { TASK_MODEL_ROUTER_ENFORCE: "1" },
     });
     expect(result.mode).toBe("enforced");
     expect(result.warning).toBeUndefined();
@@ -56,7 +56,7 @@ describe("resolveEnforcementMode — env gate overrides", () => {
   it('env="0" returns off regardless of config mode "enforced"', () => {
     const result = resolveEnforcementMode({
       config: cfg({ mode: "enforced" }),
-      env: { MODEL_ROUTER_ENFORCE: "0" },
+      env: { TASK_MODEL_ROUTER_ENFORCE: "0" },
     });
     expect(result.mode).toBe("off");
     expect(result.warning).toBeUndefined();
@@ -66,7 +66,7 @@ describe("resolveEnforcementMode — env gate overrides", () => {
     const result = resolveEnforcementMode({
       config: cfg({ mode: "enforced", perTier: { heavy: "enforced" } }),
       tier: "heavy",
-      env: { MODEL_ROUTER_ENFORCE: "0" },
+      env: { TASK_MODEL_ROUTER_ENFORCE: "0" },
     });
     expect(result.mode).toBe("off");
   });
@@ -80,11 +80,11 @@ describe("resolveEnforcementMode — unrecognised env value", () => {
   it('env="x" falls through to config and attaches a warning', () => {
     const result = resolveEnforcementMode({
       config: cfg({ mode: "advisory" }),
-      env: { MODEL_ROUTER_ENFORCE: "x" },
+      env: { TASK_MODEL_ROUTER_ENFORCE: "x" },
     });
     expect(result.mode).toBe("advisory");
     expect(result.warning).toBeDefined();
-    expect(result.warning).toContain("MODEL_ROUTER_ENFORCE");
+    expect(result.warning).toContain("TASK_MODEL_ROUTER_ENFORCE");
     expect(result.warning).toContain('"x"');
     expect(result.warning).toContain('is not "1" or "0"');
   });
@@ -95,14 +95,14 @@ describe("resolveEnforcementMode — unrecognised env value", () => {
       env: { MY_GATE: "yes" },
     });
     expect(result.warning).toContain("MY_GATE");
-    expect(result.warning).not.toContain("MODEL_ROUTER_ENFORCE");
+    expect(result.warning).not.toContain("TASK_MODEL_ROUTER_ENFORCE");
     expect(result.mode).toBe("off");
   });
 
   it('env="" (empty string) does NOT produce a warning and falls through to config', () => {
     const result = resolveEnforcementMode({
       config: cfg({ mode: "advisory" }),
-      env: { MODEL_ROUTER_ENFORCE: "" },
+      env: { TASK_MODEL_ROUTER_ENFORCE: "" },
     });
     expect(result.mode).toBe("advisory");
     expect(result.warning).toBeUndefined();
@@ -185,13 +185,21 @@ describe("resolveEnforcementMode — config resolution", () => {
     expect(result.mode).toBe("advisory");
   });
 
-  it("custom envGate is respected — reads from that key, not MODEL_ROUTER_ENFORCE", () => {
-    // MODEL_ROUTER_ENFORCE="0" would give off, but MY_CUSTOM_GATE="1" should give enforced
+  it("custom envGate is respected — reads from that key, not TASK_MODEL_ROUTER_ENFORCE", () => {
+    // TASK_MODEL_ROUTER_ENFORCE="0" would give off, but MY_CUSTOM_GATE="1" should give enforced
     const result = resolveEnforcementMode({
       config: cfg({ mode: "off", envGate: "MY_CUSTOM_GATE" }),
-      env: { MY_CUSTOM_GATE: "1", MODEL_ROUTER_ENFORCE: "0" },
+      env: { MY_CUSTOM_GATE: "1", TASK_MODEL_ROUTER_ENFORCE: "0" },
     });
     expect(result.mode).toBe("enforced");
+  });
+
+  it("does not treat the old MODEL_ROUTER_ENFORCE name as a default alias", () => {
+    const result = resolveEnforcementMode({
+      config: cfg({ mode: "off" }),
+      env: { MODEL_ROUTER_ENFORCE: "1" },
+    });
+    expect(result.mode).toBe("off");
   });
 
   it("custom envGate env=0 overrides config enforced", () => {

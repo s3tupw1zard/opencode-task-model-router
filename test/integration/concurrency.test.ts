@@ -28,7 +28,7 @@ describe("concurrency isolation", () => {
     savedUserProfile = process.env.USERPROFILE;
     process.env.HOME = dir;
     process.env.USERPROFILE = dir;
-    process.env.MODEL_ROUTER_ENFORCE = "1";
+    process.env.TASK_MODEL_ROUTER_ENFORCE = "1";
     invalidateConfigCache();
 
     const ctx = {
@@ -66,7 +66,7 @@ describe("concurrency isolation", () => {
     } else {
       process.env.USERPROFILE = savedUserProfile;
     }
-    delete process.env.MODEL_ROUTER_ENFORCE;
+    delete process.env.TASK_MODEL_ROUTER_ENFORCE;
     invalidateConfigCache();
     fs.rmSync(dir, { recursive: true, force: true });
   });

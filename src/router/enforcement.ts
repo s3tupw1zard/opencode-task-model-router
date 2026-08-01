@@ -6,7 +6,7 @@ import type { RouterConfig } from "./config";
 
 export type EnforcementMode = "off" | "advisory" | "enforced";
 
-export const DEFAULT_ENV_GATE = "MODEL_ROUTER_ENFORCE";
+export const DEFAULT_ENV_GATE = "TASK_MODEL_ROUTER_ENFORCE";
 
 export function resolveEnforcementMode(args: {
   config: RouterConfig | undefined;

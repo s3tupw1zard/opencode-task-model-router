@@ -11,7 +11,7 @@ Optional `enforcement` block in `tiers.json`. Fully additive — omitting the bl
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `mode` | `"off" \| "advisory" \| "enforced"` | `"off"` | Global enforcement mode. `off` = no-op. `advisory` = log violations, never block. `enforced` = block/escalate on violations. |
-| `envGate` | `string` | `"MODEL_ROUTER_ENFORCE"` | Name of the env var that overrides mode at runtime. See env-gate truth table below. |
+| `envGate` | `string` | `"TASK_MODEL_ROUTER_ENFORCE"` | Name of the env var that overrides mode at runtime. See env-gate truth table below. |
 | `perTier` | `Record<string, "off" \| "advisory" \| "enforced">` | `{}` | Per-tier mode overrides. Keyed by tier name. Overrides base `mode` when the env gate is unset/empty. |
 | `guard` | object | see below | Request-level hard guards (caps, script controls, budget). |
 | `verify` | object | see below | Verification / grading policy. |
@@ -77,7 +77,7 @@ Optional `enforcement` block in `tiers.json`. Fully additive — omitting the bl
 
 ## Env-gate truth table
 
-Env var name: value of `enforcement.envGate` (default `MODEL_ROUTER_ENFORCE`).  
+Env var name: value of `enforcement.envGate` (default `TASK_MODEL_ROUTER_ENFORCE`).
 Evaluated by `resolveEnforcementMode` on every dispatch.
 
 | Env var value | Resolved mode | Notes |
@@ -113,7 +113,7 @@ Evaluated by `resolveEnforcementMode` on every dispatch.
 Three independent mechanisms; env gate always wins:
 
 1. **Config** — set `enforcement.mode` in `tiers.json` (persisted, version-controlled).
-2. **Env var** — `MODEL_ROUTER_ENFORCE=1` (forces `enforced`) or `=0` (forces `off`). Overrides config and `/router` state.
+2. **Env var** — `TASK_MODEL_ROUTER_ENFORCE=1` (forces `enforced`) or `=0` (forces `off`). Overrides config and `/router` state.
 3. **Runtime command** — `/router enforce <off|advisory|enforced>` (written to the router state file; env gate still overrides).
 
 ---
@@ -125,7 +125,7 @@ Three independent mechanisms; env gate always wins:
 {
   "enforcement": {
     "mode": "advisory",
-    "envGate": "MODEL_ROUTER_ENFORCE",
+    "envGate": "TASK_MODEL_ROUTER_ENFORCE",
     "perTier": {
       "fast": "off"
     },

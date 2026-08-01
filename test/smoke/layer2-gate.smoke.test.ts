@@ -1,7 +1,7 @@
 /**
  * Smoke test: Layer-2 acceptance gate (Option i verify-dispatch) end-to-end.
  *
- * Exercises the real `opencode run` path with MODEL_ROUTER_ENFORCE=1.
+ * Exercises the real `opencode run` path with TASK_MODEL_ROUTER_ENFORCE=1.
  * The prompt asks the orchestrator to dispatch a fast subagent whose task text
  * embeds an [acceptance] block with a deterministic fileExists check for a
  * file that DOES NOT exist (__definitely_missing_artifact__.txt).  Because
@@ -99,7 +99,7 @@ d("layer-2 acceptance gate smoke", () => {
           ],
           {
             cwd: REPO_ROOT,
-            env: { ...process.env, MODEL_ROUTER_ENFORCE: "1" },
+            env: { ...process.env, TASK_MODEL_ROUTER_ENFORCE: "1" },
             encoding: "utf8",
             maxBuffer: 20 * 1024 * 1024,
             timeout: 180_000,
@@ -166,7 +166,7 @@ d("layer-2 acceptance gate smoke", () => {
 
         // ── task was dispatched — look for the forcing note ──────────────────
         // Option(i) verify-dispatch fires inside tool.execute.after for the
-        // built-in task tool when MODEL_ROUTER_ENFORCE=1.  When the fileExists
+        // built-in task tool when TASK_MODEL_ROUTER_ENFORCE=1.  When the fileExists
         // check for __definitely_missing_artifact__.txt fails (the file does
         // not exist), buildForcingNote() is invoked and its first line is
         // "NOT ACCEPTED".  We search the raw text case-insensitively.

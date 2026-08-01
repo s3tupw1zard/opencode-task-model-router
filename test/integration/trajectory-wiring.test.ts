@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import ModelRouterPlugin from "../../src/index";
@@ -15,10 +15,11 @@ import { createSessionStore } from "../../src/router/sessions";
  */
 
 function trajFile(sid: string): string {
-  return join(tmpdir(), "opencode-model-router-trajectory", `${sid}.log`);
+  return join(tmpdir(), "opencode-task-model-router-trajectory", `${sid}.log`);
 }
 
 afterEach(() => {
+  delete process.env.TASK_MODEL_ROUTER_TRAJECTORY_DEBUG;
   delete process.env.MODEL_ROUTER_TRAJECTORY_DEBUG;
 });
 
@@ -47,7 +48,7 @@ describe("trajectory wiring (Phase 0.3, record-only)", () => {
   });
 
   it("does NOT track or dump orchestrator (non-subagent) sessions", async () => {
-    process.env.MODEL_ROUTER_TRAJECTORY_DEBUG = "1";
+    process.env.TASK_MODEL_ROUTER_TRAJECTORY_DEBUG = "1";
     const plugin: any = await ModelRouterPlugin({} as any);
     const sid = "ses_orchestrator";
     // No chat.message registering this as a subagent → not tracked.
@@ -59,7 +60,7 @@ describe("trajectory wiring (Phase 0.3, record-only)", () => {
   });
 
   it("records a subagent trajectory and writes a gated debug dump on session.idle", async () => {
-    process.env.MODEL_ROUTER_TRAJECTORY_DEBUG = "1";
+    process.env.TASK_MODEL_ROUTER_TRAJECTORY_DEBUG = "1";
     const plugin: any = await ModelRouterPlugin({} as any);
     const sid = "ses_traj_dump";
     rmSync(trajFile(sid), { force: true });
@@ -78,7 +79,7 @@ describe("trajectory wiring (Phase 0.3, record-only)", () => {
     rmSync(trajFile(sid), { force: true });
   });
 
-  it("debug dump is a no-op when MODEL_ROUTER_TRAJECTORY_DEBUG is unset", async () => {
+  it("debug dump is a no-op when TASK_MODEL_ROUTER_TRAJECTORY_DEBUG is unset", async () => {
     const plugin: any = await ModelRouterPlugin({} as any);
     const sid = "ses_no_debug";
     rmSync(trajFile(sid), { force: true });
@@ -86,5 +87,18 @@ describe("trajectory wiring (Phase 0.3, record-only)", () => {
     await plugin["tool.execute.after"]({ sessionID: sid, tool: "read", args: { file_path: "a.ts" } }, { output: "R" });
     await plugin["event"]({ event: { type: "session.idle", properties: { sessionID: sid } } });
     expect(() => readFileSync(trajFile(sid), "utf-8")).toThrow(); // no file written
+  });
+
+  it("does not treat MODEL_ROUTER_TRAJECTORY_DEBUG as an alias", async () => {
+    process.env.MODEL_ROUTER_TRAJECTORY_DEBUG = "1";
+    const plugin: any = await ModelRouterPlugin({} as any);
+    const sid = "ses_old_debug_env";
+    rmSync(trajFile(sid), { force: true });
+
+    await plugin["chat.message"]({ agent: "fast", sessionID: sid }, { parts: [{ text: "recon" }] });
+    await plugin["tool.execute.after"]({ sessionID: sid, tool: "read", args: { file_path: "a.ts" } }, { output: "R" });
+    await plugin["event"]({ event: { type: "session.idle", properties: { sessionID: sid } } });
+
+    expect(existsSync(trajFile(sid))).toBe(false);
   });
 });

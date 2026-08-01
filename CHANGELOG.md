@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Renamed the fork and npm package to `opencode-task-model-router`.
+- Moved persisted state to `opencode-task-model-router.state.json`; valid legacy
+  state is copied once without modifying the old file.
+- Moved temporary trajectory output to `opencode-task-model-router-trajectory`.
+- Renamed the runtime environment variables from `MODEL_ROUTER_*` to
+  `TASK_MODEL_ROUTER_*`. The old names are not automatic aliases.
+
 ## [1.3.0]
 
 ### Changed — advisory enforcement is now the default

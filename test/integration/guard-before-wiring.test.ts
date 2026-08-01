@@ -14,16 +14,16 @@ describe("guard-before-wiring integration", () => {
   let dir: string;
 
   beforeEach(async () => {
-    savedEnforce = process.env.MODEL_ROUTER_ENFORCE;
+    savedEnforce = process.env.TASK_MODEL_ROUTER_ENFORCE;
     savedHome = process.env.HOME;
     savedUserProfile = process.env.USERPROFILE;
     // Hermetic home: never read the developer's real state file
-    // (~/.config/opencode/opencode-model-router.state.json), whose persisted
+    // (~/.config/opencode/opencode-task-model-router.state.json), whose persisted
     // enforcementMode would otherwise leak into these off/on assertions.
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "gbw-"));
     process.env.HOME = dir;
     process.env.USERPROFILE = dir;
-    delete process.env.MODEL_ROUTER_ENFORCE;
+    delete process.env.TASK_MODEL_ROUTER_ENFORCE;
     invalidateConfigCache();
     hooks = await ModelRouterPlugin({} as any);
     // Register "SUB" as a subagent session by passing agent:"fast"
@@ -33,9 +33,9 @@ describe("guard-before-wiring integration", () => {
 
   afterEach(() => {
     if (savedEnforce === undefined) {
-      delete process.env.MODEL_ROUTER_ENFORCE;
+      delete process.env.TASK_MODEL_ROUTER_ENFORCE;
     } else {
-      process.env.MODEL_ROUTER_ENFORCE = savedEnforce;
+      process.env.TASK_MODEL_ROUTER_ENFORCE = savedEnforce;
     }
     if (savedHome === undefined) delete process.env.HOME;
     else process.env.HOME = savedHome;
@@ -51,7 +51,7 @@ describe("guard-before-wiring integration", () => {
 
   // (a) ENFORCED: self-script is hard-blocked for a registered subagent.
   it("(a) ENFORCED: self-script bash command is hard-blocked", async () => {
-    process.env.MODEL_ROUTER_ENFORCE = "1";
+    process.env.TASK_MODEL_ROUTER_ENFORCE = "1";
     await expect(
       hooks["tool.execute.before"](
         { sessionID: "SUB", tool: "bash", callID: "c1" },
@@ -62,7 +62,7 @@ describe("guard-before-wiring integration", () => {
 
   // (b) ENFORCED: unregistered (orchestrator) session is never guarded.
   it("(b) ENFORCED: orchestrator session is not guarded", async () => {
-    process.env.MODEL_ROUTER_ENFORCE = "1";
+    process.env.TASK_MODEL_ROUTER_ENFORCE = "1";
     await expect(
       hooks["tool.execute.before"](
         { sessionID: "ORCH", tool: "bash", callID: "c2" },
@@ -74,7 +74,7 @@ describe("guard-before-wiring integration", () => {
   // (c) GA-1: enforcement off — byte-identical behaviour (no guard activity).
   it("(c) GA-1: enforcement off — no throw and no GUARD: text injected", async () => {
     // Pin to "off" mode explicitly so advisory default does not activate the guard.
-    process.env.MODEL_ROUTER_ENFORCE = "0";
+    process.env.TASK_MODEL_ROUTER_ENFORCE = "0";
 
     // before-hook must not throw even for a self-script
     await expect(
@@ -96,7 +96,7 @@ describe("guard-before-wiring integration", () => {
 
   // (d) ENFORCED: redundant read is blocked on the second attempt.
   it("(d) ENFORCED: second identical read is blocked as redundant", async () => {
-    process.env.MODEL_ROUTER_ENFORCE = "1";
+    process.env.TASK_MODEL_ROUTER_ENFORCE = "1";
 
     // First read — must be allowed
     await expect(
