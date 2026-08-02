@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
+  configPath,
   globalConfigPath,
   invalidateConfigCache,
   loadConfig,
@@ -189,5 +190,73 @@ describe.sequential("layered JSONC configuration", () => {
     expect(() => loadConfig()).toThrow(
       new RegExp(`${globalConfigPath()}.*unable to read configuration`),
     );
+  });
+
+  it("merges a partial v2 project override into normalized bundled defaults", () => {
+    const root = project("canonical-project");
+    const path = projectConfigPath(root);
+    write(
+      path,
+      JSON.stringify({
+        schemaVersion: 2,
+        roles: {
+          explore: {
+            defaultTier: "medium",
+            allowedTiers: ["medium"],
+          },
+        },
+        budgets: { roles: { explore: { localRead: 2 } } },
+      }),
+    );
+
+    const loaded = loadConfigWithMetadata({ projectRoot: root });
+    expect(loaded.config.schemaVersion).toBe(2);
+    expect(loaded.config.roles.explore.defaultTier).toBe("medium");
+    expect(loaded.config.roles.explore.allowedTiers).toEqual(["medium"]);
+    expect(loaded.config.roles.explore.taskPatterns).toEqual([
+      "find",
+      "locate",
+      "inspect",
+      "trace",
+    ]);
+    expect(loaded.config.budgets.roles.explore).toEqual({ localRead: 2 });
+    expect(loaded.canonicalProvenance.get("roles.explore.allowedTiers")).toBe(path);
+    expect(loaded.canonicalProvenance.get("budgets.roles.explore.localRead")).toBe(path);
+  });
+
+  it("maps a legacy global cap before applying a canonical project override", () => {
+    const root = project("mixed-schemas");
+    write(globalConfigPath(), JSON.stringify({ tierCaps: { fast: 4 } }));
+    write(
+      projectConfigPath(root),
+      JSON.stringify({
+        schemaVersion: 2,
+        budgets: { tiers: { fast: { commandExecution: 1 } } },
+      }),
+    );
+
+    const loaded = loadConfigWithMetadata({ projectRoot: root });
+    expect(loaded.config.budgets.tiers.fast).toEqual({
+      localRead: 4,
+      commandExecution: 1,
+    });
+    expect(loaded.config.compatibility.sourceSchemas).toEqual([1, 2]);
+    expect(loaded.warnings.map((warning) => warning.code)).toContain("legacy-config");
+  });
+
+  it("attributes per-layer schema errors to the layer that contains them", () => {
+    const root = project("schema-source");
+    write(globalConfigPath(), JSON.stringify({ schemaVersion: 3 }));
+    write(projectConfigPath(root), JSON.stringify({ schemaVersion: 2 }));
+
+    expect(() => loadConfigWithMetadata({ projectRoot: root })).toThrow(
+      `${globalConfigPath()}: field 'schemaVersion'`,
+    );
+  });
+
+  it("projects active legacy preset provenance onto canonical models", () => {
+    const loaded = loadConfigWithMetadata();
+    expect(loaded.canonicalProvenance.get("models.fast.model")).toBe(configPath());
+    expect(loaded.canonicalProvenance.get("models.medium.variant")).toBe(configPath());
   });
 });

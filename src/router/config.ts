@@ -9,6 +9,34 @@ import {
   type Node as JsoncNode,
   type ParseError,
 } from "jsonc-parser";
+import {
+  ConfigValidationError,
+  finalizeNormalizedConfig,
+  normalizeConfigPatch,
+  type ConfigSchemaVersion,
+  type ConfigWarning,
+  type NormalizedRouterConfig,
+} from "./normalize";
+
+export type {
+  AgentIdentity,
+  BudgetCategory,
+  BudgetLimits,
+  CompatibilityMetadata,
+  ConfigSchemaVersion,
+  ConfigWarning,
+  McpToolConfig,
+  ModelTierOverride,
+  NormalizedBudgetsConfig,
+  NormalizedDelegationConfig,
+  NormalizedRoleConfig,
+  NormalizedRouterConfig,
+  NormalizedToolsConfig,
+  RawConfigV1,
+  RawConfigV2,
+  RoleToolPolicy,
+  ToolCategory,
+} from "./normalize";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -100,9 +128,11 @@ export interface ConfigLoadOptions {
 }
 
 export interface LoadedConfig {
-  config: RouterConfig;
+  config: NormalizedRouterConfig;
   layers: readonly ConfigLayer[];
   provenance: ReadonlyMap<string, string>;
+  canonicalProvenance: ReadonlyMap<string, string>;
+  warnings: readonly ConfigWarning[];
 }
 
 // ---------------------------------------------------------------------------
@@ -159,7 +189,7 @@ export function resolvePresetName(
   );
 }
 
-export function validateConfig(raw: unknown): RouterConfig {
+function validateLegacyConfig(raw: unknown): RouterConfig {
   if (typeof raw !== "object" || raw === null) {
     throw new Error("tiers.json: expected a JSON object at root");
   }
@@ -296,7 +326,10 @@ export function validateConfig(raw: unknown): RouterConfig {
     }
     const tp = obj.taskPatterns as Record<string, unknown>;
     for (const [tierName, patterns] of Object.entries(tp)) {
-      if (!Array.isArray(patterns)) {
+      if (
+        !Array.isArray(patterns) ||
+        !patterns.every((pattern) => typeof pattern === "string")
+      ) {
         throw new Error(
           `tiers.json: taskPatterns.'${tierName}' must be an array of strings`,
         );
@@ -440,6 +473,31 @@ export function validateConfig(raw: unknown): RouterConfig {
   }
 
   return raw as RouterConfig;
+}
+
+function shouldValidateLegacyConfig(raw: unknown): boolean {
+  return (
+    isPlainObject(raw) &&
+    raw.schemaVersion !== 2 &&
+    raw.models === undefined &&
+    typeof raw.activePreset === "string" &&
+    raw.presets !== undefined &&
+    raw.rules !== undefined &&
+    raw.defaultTier !== undefined
+  );
+}
+
+/** Validate and normalize one complete v1 or v2 document for programmatic callers. */
+export function validateConfig(raw: unknown): NormalizedRouterConfig {
+  const normalized = normalizeConfigPatch(raw, "tiers.json", true);
+  if (normalized.schema === 1) validateLegacyConfig(raw);
+  const config = finalizeNormalizedConfig(
+    normalized.patch,
+    [normalized.schema],
+    normalized.warnings,
+  );
+  validateLegacyConfig(config);
+  return config;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -662,18 +720,55 @@ function provenanceSource(
   return provenance.get("$") ?? fallback;
 }
 
-function validateMergedConfig(
-  raw: unknown,
+function sourceAwareValidationError(
+  error: unknown,
   provenance: ReadonlyMap<string, string>,
   fallbackSource: string,
-): RouterConfig {
-  try {
-    return validateConfig(raw);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const path = validationFieldPath(message);
-    const source = provenanceSource(provenance, path, fallbackSource);
-    throw new Error(`${source}: field '${path}': ${message.replace(/^tiers\.json:\s*/u, "")}`);
+): never {
+  const message = error instanceof Error ? error.message : String(error);
+  const path = error instanceof ConfigValidationError
+    ? error.fieldPath
+    : validationFieldPath(message);
+  const source = provenanceSource(provenance, path, fallbackSource);
+  throw new Error(`${source}: field '${path}': ${message.replace(/^tiers\.json:\s*/u, "")}`);
+}
+
+function layerValidationError(error: unknown, source: string): never {
+  const message = error instanceof Error ? error.message : String(error);
+  const path = error instanceof ConfigValidationError
+    ? error.fieldPath
+    : validationFieldPath(message);
+  throw new Error(`${source}: field '${path}': ${message.replace(/^tiers\.json:\s*/u, "")}`);
+}
+
+function projectDerivedModelProvenance(
+  config: NormalizedRouterConfig,
+  provenance: Map<string, string>,
+  fallbackSource: string,
+): void {
+  const visit = (value: unknown, targetPath: string, sourcePath: string): void => {
+    if (!provenance.has(targetPath)) {
+      provenance.set(
+        targetPath,
+        provenanceSource(provenance, sourcePath, fallbackSource),
+      );
+    }
+    if (!isPlainObject(value)) return;
+    for (const [key, child] of Object.entries(value)) {
+      visit(
+        child,
+        fieldPath(targetPath, key),
+        fieldPath(sourcePath, key),
+      );
+    }
+  };
+
+  for (const [tier, model] of Object.entries(config.models)) {
+    visit(
+      model,
+      `models.${tier}`,
+      `presets.${config.activePreset}.${tier}`,
+    );
   }
 }
 
@@ -706,25 +801,93 @@ export function loadConfigWithMetadata(
     merged = mergeLayer(merged, layer.value, layer.path, provenance);
   }
 
-  const cfg = validateMergedConfig(merged, provenance, bundled.path);
+  if (shouldValidateLegacyConfig(merged)) {
+    try {
+      validateLegacyConfig(merged);
+    } catch (error) {
+      sourceAwareValidationError(error, provenance, bundled.path);
+    }
+  }
+
+  const canonicalProvenance = new Map<string, string>();
+  const schemas: ConfigSchemaVersion[] = [];
+  const warnings: ConfigWarning[] = [];
+  let canonicalMerged: unknown = {};
+  for (const layer of layers) {
+    let normalized;
+    try {
+      normalized = normalizeConfigPatch(
+        layer.value,
+        layer.path,
+        layer.kind === "bundled",
+      );
+    } catch (error) {
+      layerValidationError(error, layer.path);
+    }
+    schemas.push(normalized.schema);
+    warnings.push(...normalized.warnings);
+    canonicalMerged = mergeLayer(
+      canonicalMerged,
+      normalized.patch,
+      layer.path,
+      canonicalProvenance,
+    );
+  }
+
+  let cfg: NormalizedRouterConfig;
+  try {
+    cfg = finalizeNormalizedConfig(canonicalMerged, schemas, warnings);
+  } catch (error) {
+    sourceAwareValidationError(
+      error,
+      canonicalProvenance,
+      bundled.path,
+    );
+  }
+  try {
+    validateLegacyConfig(cfg);
+  } catch (error) {
+    sourceAwareValidationError(error, canonicalProvenance, bundled.path);
+  }
+  projectDerivedModelProvenance(cfg, canonicalProvenance, bundled.path);
   const state = readState();
   if (state.activePreset) {
     const resolved = resolvePresetName(cfg, state.activePreset);
     if (resolved) cfg.activePreset = resolved;
+    else warnings.push({
+      code: "persisted-state-ignored",
+      message: `Unknown persisted preset '${state.activePreset}' was ignored`,
+      source: statePath(),
+      path: "activePreset",
+    });
   }
   if (state.activeMode && cfg.modes?.[state.activeMode]) {
     cfg.activeMode = state.activeMode;
+  } else if (state.activeMode) {
+    warnings.push({
+      code: "persisted-state-ignored",
+      message: `Unknown persisted mode '${state.activeMode}' was ignored`,
+      source: statePath(),
+      path: "activeMode",
+    });
   }
   if (state.enforcementMode) {
     cfg.enforcement = { ...(cfg.enforcement ?? {}), mode: state.enforcementMode };
   }
+  Object.freeze(warnings);
 
-  const result: LoadedConfig = { config: cfg, layers, provenance };
+  const result: LoadedConfig = {
+    config: cfg,
+    layers,
+    provenance,
+    canonicalProvenance,
+    warnings,
+  };
   _configCache.set(key, result);
   return result;
 }
 
-export function loadConfig(options: ConfigLoadOptions = {}): RouterConfig {
+export function loadConfig(options: ConfigLoadOptions = {}): NormalizedRouterConfig {
   return loadConfigWithMetadata(options).config;
 }
 

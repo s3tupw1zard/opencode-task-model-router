@@ -84,7 +84,7 @@ const TEXT_KEYS = new Set([
 const GUARD_CODE_PATTERN =
   /\b(read_budget|redundant_read|anti_self_script|pre_deliverable|iteration_cap)\b/giu;
 const GUARD_TEXT_PATTERN =
-  /(?:\[.?\s*GUARD:[^\]]+\]|DENIED:\s*read\/draft[^\n]*|read\/draft budget (?:exhausted|gate)[^\n]*|\bNEXT:\s*[^\n]*)/giu;
+  /(?:\[.?\s*GUARD:[^\]]+\]|DENIED:\s*read\/draft[^\n]*|read\/draft budget (?:exhausted|gate)[^\n]*|\bbudget exhaustion\b|\b(?:environment|runtime budget) guard[^\n]*(?:block|refus)[^\n]*reads?|\bNEXT:\s*[^\n]*)/giu;
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
