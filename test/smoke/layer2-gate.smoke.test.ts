@@ -10,9 +10,7 @@
  *
  * GATED: runs only when RUN_OC_SMOKE=1 is set.
  * Excluded from default `npm test` by vitest.config.ts exclude pattern.
- * Run explicitly:
- *   $env:RUN_OC_SMOKE='1'
- *   npx vitest run --config vitest.smoke.config.ts test/smoke/layer2-gate.smoke.test.ts
+ * Run explicitly with OPENCODE_SMOKE_MODEL set to an available local model ID.
  *
  * Tolerant assertion strategy (3 lines):
  *   1. No task tool call in output (orchestrator refusal) → console.warn +
@@ -23,20 +21,22 @@
  *      gate regression — never a false CI failure.
  */
 import { describe, it } from "vitest";
-import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import {
+  createSmokeConfig,
+  requireSmokeModel,
+  runOpenCode,
+} from "./support";
 
 const RUN = process.env.RUN_OC_SMOKE === "1";
 const d = RUN ? describe : describe.skip;
 
 const REPO_ROOT = path.resolve(__dirname, "../..");
 const OUT_DIR = path.join(REPO_ROOT, "tmp", "smoke");
-const OUT_FILE = path.join(OUT_DIR, "layer2-gate.json");
+const OUT_FILE = path.join(OUT_DIR, `layer2-gate-${process.pid}.json`);
 /** Absolute path to the plugin entry — derived at runtime, never hardcoded. */
 const PLUGIN_PATH = path.join(REPO_ROOT, "src", "index.ts");
-/** Temporary opencode.json written at repo root for this run only. */
-const TEMP_CONFIG = path.join(REPO_ROOT, "opencode.json");
 
 /**
  * The inner task prompt that the orchestrator is asked to copy verbatim into
@@ -67,56 +67,46 @@ const PROMPT =
 d("layer-2 acceptance gate smoke", () => {
   it(
     "Option(i) verify-dispatch appends NOT ACCEPTED when DoD file is absent",
-    () => {
-      fs.mkdirSync(OUT_DIR, { recursive: true });
-
-      // Write a temporary opencode.json at the repo root that loads this plugin
-      // by absolute path.  Path is derived from __dirname so it is portable
-      // across machines and matches how the existing guard-hardblock smoke works.
-      const configPayload = JSON.stringify(
-        {
-          $schema: "https://opencode.ai/config.json",
-          plugin: [PLUGIN_PATH],
-        },
-        null,
-        2,
-      );
-      fs.writeFileSync(TEMP_CONFIG, configPayload, "utf8");
+    async () => {
+      const model = requireSmokeModel();
+      const smokeConfig = createSmokeConfig("layer2-gate", PLUGIN_PATH);
 
       try {
-        const start = Date.now();
+        fs.mkdirSync(OUT_DIR, { recursive: true });
 
-        const result = spawnSync(
-          "opencode",
-          [
+        const result = await runOpenCode({
+          args: [
             "run",
             PROMPT,
             "--model",
-            "anthropic/claude-haiku-4-5",
+            model,
             "--format",
             "json",
             "--dangerously-skip-permissions",
           ],
-          {
-            cwd: REPO_ROOT,
-            env: { ...process.env, TASK_MODEL_ROUTER_ENFORCE: "1" },
-            encoding: "utf8",
-            maxBuffer: 20 * 1024 * 1024,
-            timeout: 180_000,
+          cwd: REPO_ROOT,
+          env: {
+            ...process.env,
+            OPENCODE_CONFIG: smokeConfig.path,
+            OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+            TASK_MODEL_ROUTER_ENFORCE: "1",
           },
-        );
+        });
 
-        const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-        console.log(`opencode exited in ${elapsed}s, status=${result.status}`);
+        const elapsed = (result.elapsedMs / 1000).toFixed(1);
+        console.log(`opencode exited in ${elapsed}s, status=${result.code}`);
 
-        const stdout = result.stdout ?? "";
-        const stderr = result.stderr ?? "";
+        const { stdout, stderr } = result;
 
         fs.writeFileSync(
           OUT_FILE,
           JSON.stringify(
             {
-              exitCode: result.status,
+              exitCode: result.code,
+              signal: result.signal,
+              timedOut: result.timedOut,
+              overflowed: result.overflowed,
+              spawnError: result.spawnError?.message,
               elapsed,
               stdout,
               stderr: stderr.slice(0, 4_000),
@@ -126,12 +116,24 @@ d("layer-2 acceptance gate smoke", () => {
           ),
         );
 
-        // ── exit-code check ──────────────────────────────────────────────────
-        if (result.status !== 0) {
+        if (
+          result.code !== 0 ||
+          result.signal !== null ||
+          result.timedOut ||
+          result.overflowed ||
+          result.spawnError
+        ) {
           const excerpt = (stdout + "\n" + stderr).slice(0, 600);
           throw new Error(
-            `opencode exited with code ${result.status}.\nExcerpt:\n${excerpt}`,
+            `opencode failed: code=${result.code}, signal=${result.signal}, timedOut=${result.timedOut}, overflowed=${result.overflowed}, spawnError=${result.spawnError?.message ?? "none"}.\nExcerpt:\n${excerpt}`,
           );
+        }
+
+        const modelFailure = `${stdout}\n${stderr}`.match(
+          /ProviderModelNotFoundError|Model not found:/iu,
+        );
+        if (modelFailure) {
+          throw new Error(`Smoke used an unavailable model: ${modelFailure[0]}`);
         }
 
         // ── detect whether a task tool call was dispatched ───────────────────
@@ -153,7 +155,7 @@ d("layer-2 acceptance gate smoke", () => {
           //   test/integration/layer2-wiring.test.ts  (cases A, D, E)
           // which exercises buildForcingNote / verifyDoD directly against the
           // real factory without requiring a live orchestrator.  The live
-          // end-to-end path shape is spike-proven; a Haiku compliance refusal
+          // end-to-end path shape is spike-proven; a model compliance refusal
           // here is not a gate regression.
           console.warn(
             "[layer2-gate smoke] Orchestrator did NOT dispatch a subagent " +
@@ -196,12 +198,7 @@ d("layer-2 acceptance gate smoke", () => {
         );
         console.log(`Evidence written to: ${OUT_FILE}`);
       } finally {
-        // Always remove the temp opencode.json so the repo is left clean.
-        try {
-          fs.unlinkSync(TEMP_CONFIG);
-        } catch {
-          // Already absent or a parallel process removed it — ignore.
-        }
+        smokeConfig.cleanup();
       }
     },
     185_000,

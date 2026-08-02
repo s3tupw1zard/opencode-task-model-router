@@ -666,6 +666,23 @@ The system prompt injection is ~210 tokens per message — roughly the same as v
 - Node.js 18+
 - Provider API keys configured in OpenCode
 
+## Development and testing
+
+The default test suite is offline and does not call a model:
+
+```bash
+npm run typecheck
+npm test
+```
+
+Live smoke tests exercise the plugin through a real local OpenCode installation. They require `OPENCODE_SMOKE_MODEL` in `provider/model-id` format. Set it deliberately to a model that is available and authenticated in your local OpenCode installation; use `opencode models` to check the exact ID. The smoke harness does not guess or select a model automatically.
+
+```bash
+OPENCODE_SMOKE_MODEL="provider/model-id" npm run smoke
+```
+
+If the variable is missing or empty, the smoke suite fails before starting OpenCode.
+
 ## License
 
 GPL-3.0

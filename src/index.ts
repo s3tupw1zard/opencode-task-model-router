@@ -8,7 +8,13 @@ import {
   STATE_FILE_NAME,
   invalidateConfigCache,
 } from "./router/config";
-import type { RouterConfig, TierConfig, Preset, ModeConfig } from "./router/config";
+import type {
+  ConfigLoadOptions,
+  RouterConfig,
+  TierConfig,
+  Preset,
+  ModeConfig,
+} from "./router/config";
 import { fingerprintToolCall } from "./guard/fingerprint";
 import { detectNarration } from "./guard/narration";
 import {
@@ -34,7 +40,7 @@ import { createGuardStore } from "./guard/store";
 import { guardBeforeCall, guardAfterCall, formatScorecard } from "./guard/enforce";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, isAbsolute } from "node:path";
+import { join, isAbsolute, parse as parsePath, resolve } from "node:path";
 import { exec as nodeExec } from "node:child_process";
 import { access, readFile as fsReadFile } from "node:fs/promises";
 import { tool } from "@opencode-ai/plugin";
@@ -68,8 +74,11 @@ export type { TrajectoryState, TrajectoryToolEvent } from "./telemetry/trajector
 export type { EnforcementMode } from "./router/enforcement";
 export type { GuardPolicy, GuardState, GuardCall, GuardDecision } from "./guard/guards";
 
-function saveActivePreset(presetName: string): void {
-  const cfg = loadConfig();
+function saveActivePreset(
+  presetName: string,
+  loadOptions: ConfigLoadOptions,
+): void {
+  const cfg = loadConfig(loadOptions);
   const resolved = resolvePresetName(cfg, presetName);
   if (!resolved) {
     return;
@@ -84,8 +93,11 @@ function saveActivePreset(presetName: string): void {
   invalidateConfigCache();
 }
 
-function saveActiveMode(modeName: string): void {
-  const cfg = loadConfig();
+function saveActiveMode(
+  modeName: string,
+  loadOptions: ConfigLoadOptions,
+): void {
+  const cfg = loadConfig(loadOptions);
   if (!cfg.modes?.[modeName]) {
     return;
   }
@@ -203,7 +215,11 @@ function buildTiersOutput(cfg: RouterConfig): string {
 // /budget command output
 // ---------------------------------------------------------------------------
 
-function buildBudgetOutput(cfg: RouterConfig, args: string): string {
+function buildBudgetOutput(
+  cfg: RouterConfig,
+  args: string,
+  loadOptions: ConfigLoadOptions,
+): string {
   const modes = cfg.modes;
   if (!modes || Object.keys(modes).length === 0) {
     return 'No modes configured in tiers.json. Add a "modes" section to enable budget mode.';
@@ -227,7 +243,7 @@ function buildBudgetOutput(cfg: RouterConfig, args: string): string {
 
   // Switch mode
   if (modes[requested]) {
-    saveActiveMode(requested);
+    saveActiveMode(requested, loadOptions);
     const mode = modes[requested];
     return [
       `Routing mode switched to **${requested}**.`,
@@ -249,7 +265,11 @@ function buildBudgetOutput(cfg: RouterConfig, args: string): string {
 // /preset command output
 // ---------------------------------------------------------------------------
 
-function buildPresetOutput(cfg: RouterConfig, args: string): string {
+function buildPresetOutput(
+  cfg: RouterConfig,
+  args: string,
+  loadOptions: ConfigLoadOptions,
+): string {
   const requestedPreset = args.trim();
 
   // No args: show available presets
@@ -269,7 +289,7 @@ function buildPresetOutput(cfg: RouterConfig, args: string): string {
   // Switch preset
   const resolvedPreset = resolvePresetName(cfg, requestedPreset);
   if (resolvedPreset) {
-    saveActivePreset(resolvedPreset);
+    saveActivePreset(resolvedPreset, loadOptions);
     cfg.activePreset = resolvedPreset;
     const tiers = cfg.presets[resolvedPreset]!;
     const models = Object.entries(tiers)
@@ -294,7 +314,14 @@ function buildPresetOutput(cfg: RouterConfig, args: string): string {
 // ---------------------------------------------------------------------------
 
 const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
-  let cfg = loadConfig();
+  const projectRoot = [ctx.worktree, ctx.directory]
+    .filter((candidate): candidate is string =>
+      typeof candidate === "string" && candidate.trim().length > 0,
+    )
+    .map((candidate) => resolve(candidate))
+    .find((candidate) => candidate !== parsePath(candidate).root);
+  const configLoadOptions: ConfigLoadOptions = { projectRoot };
+  let cfg = loadConfig(configLoadOptions);
   const activeTiers = getActiveTiers(cfg);
 
   // Per-plugin-instance session store: owns subagentSessionIDs and subagentCapState.
@@ -457,7 +484,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
           try {
             let activeCfg = cfg;
             try {
-              activeCfg = loadConfig();
+              activeCfg = loadConfig(configLoadOptions);
             } catch {
               activeCfg = cfg;
             }
@@ -655,7 +682,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
       if (bypassed) return;
       // Re-read cfg so /preset switches take effect without restart
       try {
-        cfg = loadConfig();
+        cfg = loadConfig(configLoadOptions);
       } catch {}
       const tierNames = Object.keys(getActiveTiers(cfg));
       sessionStore.registerFromChatMessage(input, output, cfg, tierNames);
@@ -980,7 +1007,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
     "experimental.chat.system.transform": async (_input: any, output: any) => {
       if (bypassed) return;
       try {
-        cfg = loadConfig(); // Returns cache unless invalidated
+        cfg = loadConfig(configLoadOptions); // Returns cache unless invalidated
       } catch {
         // Use last known config if file read fails
       }
@@ -1008,7 +1035,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
     "command.execute.before": async (input: any, output: any) => {
       if (input.command === "tiers") {
         try {
-          cfg = loadConfig();
+          cfg = loadConfig(configLoadOptions);
         } catch {}
         output.parts.push({
           type: "text" as const,
@@ -1018,11 +1045,11 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
 
       if (input.command === "preset") {
         try {
-          cfg = loadConfig();
+          cfg = loadConfig(configLoadOptions);
         } catch {}
         output.parts.push({
           type: "text" as const,
-          text: buildPresetOutput(cfg, input.arguments ?? ""),
+          text: buildPresetOutput(cfg, input.arguments ?? "", configLoadOptions),
         });
       }
 
@@ -1047,17 +1074,17 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
 
       if (input.command === "budget") {
         try {
-          cfg = loadConfig();
+          cfg = loadConfig(configLoadOptions);
         } catch {}
         output.parts.push({
           type: "text" as const,
-          text: buildBudgetOutput(cfg, input.arguments ?? ""),
+          text: buildBudgetOutput(cfg, input.arguments ?? "", configLoadOptions),
         });
       }
 
       if (input.command === "router") {
         try {
-          cfg = loadConfig();
+          cfg = loadConfig(configLoadOptions);
         } catch {}
         output.parts.push({
           type: "text" as const,
