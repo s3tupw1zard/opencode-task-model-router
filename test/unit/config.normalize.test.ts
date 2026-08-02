@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { validateConfig } from "../../src/router/config";
+import { normalizeConfigPatch } from "../../src/router/normalize";
 
 function model(model: string, extra: Record<string, unknown> = {}) {
   return { model, costRatio: 1, ...extra };
@@ -96,6 +97,7 @@ describe("canonical configuration normalization", () => {
   it("supplies the five default roles and legacy aliases for v1", () => {
     const config = validateConfig(v1());
 
+    expect(config.defaultRole).toBe("implementation");
     expect(Object.keys(config.roles)).toEqual([
       "explore",
       "research",
@@ -154,6 +156,23 @@ describe("canonical configuration normalization", () => {
       whenToUse: [],
     });
     expect(config.compatibility.sourceSchemas).toEqual([2]);
+  });
+
+  it("normalizes and validates an explicit default role", () => {
+    const config = validateConfig(v2({ defaultRole: "review" }));
+    expect(config.defaultRole).toBe("review");
+    expect(() => validateConfig(v2({ defaultRole: "missing" }))).toThrow(
+      /defaultRole.*configured role/,
+    );
+    expect(() => validateConfig(v2({ defaultRole: "" }))).toThrow(
+      /defaultRole.*non-empty string/,
+    );
+  });
+
+  it("infers v2 from a default-role-only patch", () => {
+    const normalized = normalizeConfigPatch({ defaultRole: "research" }, "project.jsonc");
+    expect(normalized.schema).toBe(2);
+    expect(normalized.patch.defaultRole).toBe("research");
   });
 
   it("applies partial preset and role model overrides over top-level models", () => {
@@ -391,6 +410,12 @@ describe("canonical cross-reference validation", () => {
         }),
       ),
     ).toThrow(/floorTier.*escalation ladder/);
+  });
+
+  it("rejects canonical task patterns for an unknown tier", () => {
+    expect(() => validateConfig(v2({ taskPatterns: { missing: ["unknown-signal"] } }))).toThrow(
+      /taskPatterns\.missing.*unknown tier/,
+    );
   });
 
   it("validates compatibility fields in v2 documents", () => {

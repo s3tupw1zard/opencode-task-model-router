@@ -112,6 +112,26 @@ describe.sequential("layered JSONC configuration", () => {
     expect(loaded.provenance.get("phase3.nullable")).toBe(projectConfigPath(root));
   });
 
+  it("layers defaultRole with project precedence and canonical provenance", () => {
+    const root = project("default-role");
+    write(globalConfigPath(), JSON.stringify({ defaultRole: "research" }));
+    write(projectConfigPath(root), JSON.stringify({ defaultRole: "review" }));
+
+    const loaded = loadConfigWithMetadata({ projectRoot: root });
+    expect(loaded.config.defaultRole).toBe("review");
+    expect(loaded.canonicalProvenance.get("defaultRole")).toBe(projectConfigPath(root));
+  });
+
+  it("attributes an invalid defaultRole to the overriding layer", () => {
+    const root = project("invalid-default-role");
+    const path = projectConfigPath(root);
+    write(path, JSON.stringify({ defaultRole: "missing" }));
+
+    expect(() => loadConfig({ projectRoot: root })).toThrow(
+      `${path}: field 'defaultRole'`,
+    );
+  });
+
   it("replaces arrays instead of concatenating them", () => {
     const root = project("arrays");
     write(globalConfigPath(), JSON.stringify({ rules: ["global"] }));
