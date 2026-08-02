@@ -12,10 +12,13 @@
  * Excluded from default `npm test` by vitest.config.ts exclude pattern.
  */
 import { describe, it } from "vitest";
-import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { createSmokeConfig, requireSmokeModel } from "./support";
+import {
+  createSmokeConfig,
+  requireSmokeModel,
+  runOpenCode,
+} from "./support";
 
 const RUN = process.env.RUN_OC_SMOKE === "1";
 const d = RUN ? describe : describe.skip;
@@ -35,7 +38,7 @@ const PLUGIN_PATH = path.join(REPO_ROOT, "src", "index.ts");
 // the 4th read is blocked; the forcingMessage always contains "NEXT:" and
 // the read_budget observation contains "read/draft".
 const PROMPT =
-  'Use Task(subagent_type="fast", description="recon", prompt="This is a non-trivial code-review smoke verification. Read these files ONE AT A TIME using the read tool, in this exact order, and after each give a one-line summary: README.md, then package.json, then tsconfig.json, then tiers.json, then LICENSE, then src/index.ts. Use the read tool separately for each file; do not skip any."). After the subagent returns, reply with the single word DONE.';
+  'Use Task(subagent_type="fast", description="recon", prompt="This is a non-trivial code-review smoke verification. Read these files ONE AT A TIME using the read tool, in this exact order, and after each give a one-line summary: README.md, then package.json, then tsconfig.json, then tiers.json, then LICENSE, then src/index.ts. Use the read tool separately for each file; do not skip any.\n\n[acceptance]\ncheck: fileExists path=README.md\n[/acceptance]"). After the subagent returns, reply with the single word DONE.';
 
 type JsonObject = Record<string, unknown>;
 
@@ -81,7 +84,7 @@ const TEXT_KEYS = new Set([
 const GUARD_CODE_PATTERN =
   /\b(read_budget|redundant_read|anti_self_script|pre_deliverable|iteration_cap)\b/giu;
 const GUARD_TEXT_PATTERN =
-  /(?:\[.?\s*GUARD:[^\]]+\]|DENIED:\s*read\/draft[^\n]*|read\/draft budget exhausted[^\n]*|\bNEXT:\s*[^\n]*)/giu;
+  /(?:\[.?\s*GUARD:[^\]]+\]|DENIED:\s*read\/draft[^\n]*|read\/draft budget (?:exhausted|gate)[^\n]*|\bNEXT:\s*[^\n]*)/giu;
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -296,17 +299,14 @@ function formatDiagnosis(evidence: SmokeEvidence): string {
 d("guard hard-block smoke", () => {
   it(
     "read_budget guard fires inside a subagent session (benign recon trigger)",
-    () => {
+    async () => {
       const model = requireSmokeModel();
       const smokeConfig = createSmokeConfig("guard-hardblock", PLUGIN_PATH);
       try {
         fs.mkdirSync(OUT_DIR, { recursive: true });
 
-        const start = Date.now();
-
-        const result = spawnSync(
-          "opencode",
-          [
+        const result = await runOpenCode({
+          args: [
             "run",
             PROMPT,
             "--model",
@@ -315,25 +315,19 @@ d("guard hard-block smoke", () => {
             "json",
             "--dangerously-skip-permissions",
           ],
-          {
-            cwd: REPO_ROOT,
-            env: {
-              ...process.env,
-              OPENCODE_CONFIG: smokeConfig.path,
-              OPENCODE_DISABLE_PROJECT_CONFIG: "1",
-              TASK_MODEL_ROUTER_ENFORCE: "1",
-            },
-            encoding: "utf8",
-            maxBuffer: 20 * 1024 * 1024,
-            timeout: 180_000,
+          cwd: REPO_ROOT,
+          env: {
+            ...process.env,
+            OPENCODE_CONFIG: smokeConfig.path,
+            OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+            TASK_MODEL_ROUTER_ENFORCE: "1",
           },
-        );
+        });
 
-        const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-        console.log(`opencode exited in ${elapsed}s, status=${result.status}`);
+        const elapsed = (result.elapsedMs / 1000).toFixed(1);
+        console.log(`opencode exited in ${elapsed}s, status=${result.code}`);
 
-        const stdout = result.stdout ?? "";
-        const stderr = result.stderr ?? "";
+        const { stdout, stderr } = result;
 
         fs.writeFileSync(STDOUT_FILE, stdout, "utf8");
         fs.writeFileSync(STDERR_FILE, stderr, "utf8");
@@ -343,14 +337,32 @@ d("guard hard-block smoke", () => {
         const evidence = inspectSmokeEvidence(stdout);
         const diagnosis = formatDiagnosis(evidence);
 
-        // 1. Exit code must be 0
-        if (result.status !== 0) {
+        if (
+          result.code !== 0 ||
+          result.signal !== null ||
+          result.timedOut ||
+          result.overflowed ||
+          result.spawnError
+        ) {
           throw new Error(
-            `opencode exited with code ${result.status}.\n${diagnosis}`,
+            `opencode failed: code=${result.code}, signal=${result.signal}, timedOut=${result.timedOut}, overflowed=${result.overflowed}, spawnError=${result.spawnError?.message ?? "none"}.\n${diagnosis}`,
           );
         }
 
-        // 2. Require structured guard evidence from tool state/output events.
+        const modelFailure = `${stdout}\n${stderr}`.match(
+          /ProviderModelNotFoundError|Model not found:/iu,
+        );
+        if (modelFailure) {
+          throw new Error(
+            `Smoke used an unavailable model: ${modelFailure[0]}.\n${diagnosis}`,
+          );
+        }
+        if (/"subagent_type"\s*:\s*"medium"/u.test(stdout)) {
+          throw new Error(
+            `Guard-only smoke unexpectedly escalated to medium.\n${diagnosis}`,
+          );
+        }
+
         if (
           !evidence.guardCodes.includes("read_budget") &&
           evidence.guardTexts.length === 0

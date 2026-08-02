@@ -21,10 +21,13 @@
  *      gate regression — never a false CI failure.
  */
 import { describe, it } from "vitest";
-import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { createSmokeConfig, requireSmokeModel } from "./support";
+import {
+  createSmokeConfig,
+  requireSmokeModel,
+  runOpenCode,
+} from "./support";
 
 const RUN = process.env.RUN_OC_SMOKE === "1";
 const d = RUN ? describe : describe.skip;
@@ -64,17 +67,15 @@ const PROMPT =
 d("layer-2 acceptance gate smoke", () => {
   it(
     "Option(i) verify-dispatch appends NOT ACCEPTED when DoD file is absent",
-    () => {
+    async () => {
       const model = requireSmokeModel();
       const smokeConfig = createSmokeConfig("layer2-gate", PLUGIN_PATH);
-      fs.mkdirSync(OUT_DIR, { recursive: true });
 
       try {
-        const start = Date.now();
+        fs.mkdirSync(OUT_DIR, { recursive: true });
 
-        const result = spawnSync(
-          "opencode",
-          [
+        const result = await runOpenCode({
+          args: [
             "run",
             PROMPT,
             "--model",
@@ -83,31 +84,29 @@ d("layer-2 acceptance gate smoke", () => {
             "json",
             "--dangerously-skip-permissions",
           ],
-          {
-            cwd: REPO_ROOT,
-            env: {
-              ...process.env,
-              OPENCODE_CONFIG: smokeConfig.path,
-              OPENCODE_DISABLE_PROJECT_CONFIG: "1",
-              TASK_MODEL_ROUTER_ENFORCE: "1",
-            },
-            encoding: "utf8",
-            maxBuffer: 20 * 1024 * 1024,
-            timeout: 180_000,
+          cwd: REPO_ROOT,
+          env: {
+            ...process.env,
+            OPENCODE_CONFIG: smokeConfig.path,
+            OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+            TASK_MODEL_ROUTER_ENFORCE: "1",
           },
-        );
+        });
 
-        const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-        console.log(`opencode exited in ${elapsed}s, status=${result.status}`);
+        const elapsed = (result.elapsedMs / 1000).toFixed(1);
+        console.log(`opencode exited in ${elapsed}s, status=${result.code}`);
 
-        const stdout = result.stdout ?? "";
-        const stderr = result.stderr ?? "";
+        const { stdout, stderr } = result;
 
         fs.writeFileSync(
           OUT_FILE,
           JSON.stringify(
             {
-              exitCode: result.status,
+              exitCode: result.code,
+              signal: result.signal,
+              timedOut: result.timedOut,
+              overflowed: result.overflowed,
+              spawnError: result.spawnError?.message,
               elapsed,
               stdout,
               stderr: stderr.slice(0, 4_000),
@@ -117,12 +116,24 @@ d("layer-2 acceptance gate smoke", () => {
           ),
         );
 
-        // ── exit-code check ──────────────────────────────────────────────────
-        if (result.status !== 0) {
+        if (
+          result.code !== 0 ||
+          result.signal !== null ||
+          result.timedOut ||
+          result.overflowed ||
+          result.spawnError
+        ) {
           const excerpt = (stdout + "\n" + stderr).slice(0, 600);
           throw new Error(
-            `opencode exited with code ${result.status}.\nExcerpt:\n${excerpt}`,
+            `opencode failed: code=${result.code}, signal=${result.signal}, timedOut=${result.timedOut}, overflowed=${result.overflowed}, spawnError=${result.spawnError?.message ?? "none"}.\nExcerpt:\n${excerpt}`,
           );
+        }
+
+        const modelFailure = `${stdout}\n${stderr}`.match(
+          /ProviderModelNotFoundError|Model not found:/iu,
+        );
+        if (modelFailure) {
+          throw new Error(`Smoke used an unavailable model: ${modelFailure[0]}`);
         }
 
         // ── detect whether a task tool call was dispatched ───────────────────
