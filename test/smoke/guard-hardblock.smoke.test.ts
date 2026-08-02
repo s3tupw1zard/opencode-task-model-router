@@ -8,20 +8,22 @@
  * forcingMessage always contains "NEXT:".
  *
  * GATED: runs only when RUN_OC_SMOKE=1 is set AND the suite is invoked
- * explicitly (e.g. `npx vitest run test/smoke/guard-hardblock.smoke.test.ts`).
+ * explicitly with OPENCODE_SMOKE_MODEL set to an available local model ID.
  * Excluded from default `npm test` by vitest.config.ts exclude pattern.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { createSmokeConfig, requireSmokeModel } from "./support";
 
 const RUN = process.env.RUN_OC_SMOKE === "1";
 const d = RUN ? describe : describe.skip;
 
 const REPO_ROOT = path.resolve(__dirname, "../..");
 const OUT_DIR = path.join(REPO_ROOT, "tmp", "smoke");
-const OUT_FILE = path.join(OUT_DIR, "guard-hardblock.json");
+const OUT_FILE = path.join(OUT_DIR, `guard-hardblock-${process.pid}.json`);
+const PLUGIN_PATH = path.join(REPO_ROOT, "src", "index.ts");
 
 // Benign recon prompt: asks a fast subagent to read 6 files one-at-a-time.
 // readDraftCap=3 means after 3 consecutive reads (non-producing actions),
@@ -43,73 +45,84 @@ d("guard hard-block smoke", () => {
   it(
     "read_budget guard fires inside a subagent session (benign recon trigger)",
     () => {
-      fs.mkdirSync(OUT_DIR, { recursive: true });
+      const model = requireSmokeModel();
+      const smokeConfig = createSmokeConfig("guard-hardblock", PLUGIN_PATH);
+      try {
+        fs.mkdirSync(OUT_DIR, { recursive: true });
 
-      const start = Date.now();
+        const start = Date.now();
 
-      const result = spawnSync(
-        "opencode",
-        [
-          "run",
-          PROMPT,
-          "--model",
-          "anthropic/claude-haiku-4-5",
-          "--format",
-          "json",
-          "--dangerously-skip-permissions",
-        ],
-        {
-          cwd: REPO_ROOT,
-          env: { ...process.env, TASK_MODEL_ROUTER_ENFORCE: "1" },
-          encoding: "utf8",
-          maxBuffer: 20 * 1024 * 1024,
-          timeout: 180_000,
-        }
-      );
-
-      const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-      console.log(`opencode exited in ${elapsed}s, status=${result.status}`);
-
-      const stdout = result.stdout ?? "";
-      const stderr = result.stderr ?? "";
-
-      fs.writeFileSync(
-        OUT_FILE,
-        JSON.stringify(
+        const result = spawnSync(
+          "opencode",
+          [
+            "run",
+            PROMPT,
+            "--model",
+            model,
+            "--format",
+            "json",
+            "--dangerously-skip-permissions",
+          ],
           {
-            exitCode: result.status,
-            elapsed,
-            stdout,
-            stderr: stderr.slice(0, 4000),
+            cwd: REPO_ROOT,
+            env: {
+              ...process.env,
+              OPENCODE_CONFIG: smokeConfig.path,
+              OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+              TASK_MODEL_ROUTER_ENFORCE: "1",
+            },
+            encoding: "utf8",
+            maxBuffer: 20 * 1024 * 1024,
+            timeout: 180_000,
           },
-          null,
-          2
-        )
-      );
-
-      // 1. Exit code must be 0
-      if (result.status !== 0) {
-        const excerpt = (stdout + "\n" + stderr).slice(0, 600);
-        throw new Error(
-          `opencode exited with code ${result.status}.\nExcerpt:\n${excerpt}`
         );
-      }
 
-      // 2. At least one read-guard marker must appear (case-insensitive)
-      const lower = stdout.toLowerCase();
-      const found = MARKERS.filter((m) => lower.includes(m.toLowerCase()));
+        const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+        console.log(`opencode exited in ${elapsed}s, status=${result.status}`);
 
-      if (found.length === 0) {
-        const excerpt = stdout.slice(0, 600);
-        throw new Error(
-          `Read-guard DID NOT fire: none of [${MARKERS.join(", ")}] found in output.\n` +
-            `Output excerpt (600 chars):\n${excerpt}`
+        const stdout = result.stdout ?? "";
+        const stderr = result.stderr ?? "";
+
+        fs.writeFileSync(
+          OUT_FILE,
+          JSON.stringify(
+            {
+              exitCode: result.status,
+              elapsed,
+              stdout,
+              stderr: stderr.slice(0, 4000),
+            },
+            null,
+            2,
+          ),
         );
-      }
 
-      console.log(`Read-guard markers found: ${JSON.stringify(found)}`);
-      console.log(`Evidence written to: ${OUT_FILE}`);
+        // 1. Exit code must be 0
+        if (result.status !== 0) {
+          const excerpt = (stdout + "\n" + stderr).slice(0, 600);
+          throw new Error(
+            `opencode exited with code ${result.status}.\nExcerpt:\n${excerpt}`,
+          );
+        }
+
+        // 2. At least one read-guard marker must appear (case-insensitive)
+        const lower = stdout.toLowerCase();
+        const found = MARKERS.filter((m) => lower.includes(m.toLowerCase()));
+
+        if (found.length === 0) {
+          const excerpt = stdout.slice(0, 600);
+          throw new Error(
+            `Read-guard DID NOT fire: none of [${MARKERS.join(", ")}] found in output.\n` +
+              `Output excerpt (600 chars):\n${excerpt}`,
+          );
+        }
+
+        console.log(`Read-guard markers found: ${JSON.stringify(found)}`);
+        console.log(`Evidence written to: ${OUT_FILE}`);
+      } finally {
+        smokeConfig.cleanup();
+      }
     },
-    185_000
+    185_000,
   );
 });
