@@ -39,6 +39,7 @@ export interface RawConfigV2 {
   schemaVersion?: 2;
   activePreset?: unknown;
   activeMode?: unknown;
+  defaultRole?: unknown;
   defaultTier?: unknown;
   models?: unknown;
   presets?: unknown;
@@ -147,6 +148,7 @@ export interface CompatibilityMetadata {
 
 export interface NormalizedRouterConfig extends RouterConfig {
   schemaVersion: 2;
+  defaultRole: string;
   models: Record<string, TierConfig>;
   roles: Record<string, NormalizedRoleConfig>;
   tools: NormalizedToolsConfig;
@@ -386,7 +388,7 @@ function detectSchema(raw: Record<string, unknown>): ConfigSchemaVersion {
     }
     return version;
   }
-  return ["models", "roles", "tools", "budgets", "delegation"].some((key) =>
+  return ["defaultRole", "models", "roles", "tools", "budgets", "delegation"].some((key) =>
     Object.hasOwn(raw, key),
   )
     ? 2
@@ -835,6 +837,11 @@ function validateReferences(
 ): void {
   const tiers = new Set(Object.keys(config.models));
   if (!tiers.has(config.defaultTier)) fail("defaultTier", "must reference a configured tier");
+  for (const tier of Object.keys(config.taskPatterns ?? {})) {
+    if (strictCanonical && !tiers.has(tier)) {
+      fail(`taskPatterns.${tier}`, "references an unknown tier");
+    }
+  }
   if (config.activeMode && !config.modes?.[config.activeMode]) {
     fail("activeMode", "must reference a configured mode");
   }
@@ -844,6 +851,9 @@ function validateReferences(
     }
   }
   const roles = new Set(Object.keys(config.roles));
+  if (!roles.has(config.defaultRole)) {
+    fail("defaultRole", "must reference a configured role");
+  }
   const mcpNames = new Set(Object.keys(config.tools.mcp));
   for (const [roleName, role] of Object.entries(config.roles)) {
     for (const tier of role.allowedTiers) {
@@ -948,6 +958,10 @@ export function finalizeNormalizedConfig(
     strictCanonical,
   );
   const roles = normalizeRoles(input.roles, models, strictCanonical);
+  const defaultRole = input.defaultRole === undefined ? "implementation" : input.defaultRole;
+  if (typeof defaultRole !== "string" || !defaultRole.trim()) {
+    fail("defaultRole", "must be a non-empty string");
+  }
   const tools = normalizeTools(input.tools);
   const budgets = normalizeBudgets(input.budgets);
   const delegation = normalizeDelegation(input.delegation, Object.keys(roles));
@@ -1008,6 +1022,7 @@ export function finalizeNormalizedConfig(
     schemaVersion: 2 as const,
     activePreset,
     activeMode: typeof input.activeMode === "string" ? input.activeMode : undefined,
+    defaultRole,
     defaultTier,
     models,
     presets,
