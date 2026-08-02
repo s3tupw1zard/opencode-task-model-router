@@ -14,6 +14,7 @@ import {
   invalidateConfigCache,
   legacyStatePath,
   loadConfig,
+  loadConfigWithMetadata,
   readState,
   statePath,
   writeState,
@@ -167,6 +168,20 @@ describe("writeState / readState — atomic file operations", () => {
     expect(config.activePreset).toBe("anthropic");
     expect(config.activeMode).not.toBe("missing");
     expect(config.enforcement?.mode).toBe("enforced");
+  });
+
+  it("reports ignored persisted selections without changing normalized references", () => {
+    writeJson(statePath(), {
+      activePreset: "missing",
+      activeMode: "missing",
+    });
+
+    const loaded = loadConfigWithMetadata();
+    expect(loaded.config.activePreset).toBe("anthropic");
+    expect(loaded.config.activeMode).toBe("normal");
+    expect(loaded.warnings.filter((warning) => warning.code === "persisted-state-ignored"))
+      .toHaveLength(2);
+    expect(loaded.config.compatibility.warnings).toBe(loaded.warnings);
   });
 
   it("writes only canonical state after migration and preserves migrated keys", () => {
