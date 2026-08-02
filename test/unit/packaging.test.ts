@@ -56,6 +56,7 @@ describe("packaging: published tarball excludes tests and dev config (plan C4)",
       version: string;
       author: { name: string; url: string };
       contributors: Array<{ name: string; url: string }>;
+      dependencies: Record<string, string>;
       repository: { url: string };
       homepage: string;
       bugs: { url: string };
@@ -74,6 +75,9 @@ describe("packaging: published tarball excludes tests and dev config (plan C4)",
       homepage: "https://github.com/s3tupw1zard/opencode-task-model-router",
       bugs: {
         url: "https://github.com/s3tupw1zard/opencode-task-model-router/issues",
+      },
+      dependencies: {
+        "jsonc-parser": "^3.3.1",
       },
     });
     expect(pkg.contributors).toContainEqual({

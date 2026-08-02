@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { PluginInput } from "@opencode-ai/plugin";
 import ModelRouterPlugin from "../../src/index";
 import {
   invalidateConfigCache,
   loadConfig,
+  projectConfigPath,
   writeState,
 } from "../../src/router/config";
 import {
@@ -58,10 +59,10 @@ const ROUTER_ENV_KEYS = [
   "MODEL_ROUTER_TRAJECTORY_DEBUG",
 ] as const;
 
-function fakePluginInput(directory: string): PluginInput {
+function fakePluginInput(directory: string, worktree = directory): PluginInput {
   return {
     directory,
-    worktree: directory,
+    worktree,
     project: {} as PluginInput["project"],
     serverUrl: new URL("http://localhost"),
     $: (() => {}) as unknown as PluginInput["$"],
@@ -116,6 +117,12 @@ describe.sequential("config hook characterization", () => {
     return target;
   }
 
+  function writeProjectConfig(projectRoot: string, value: unknown): void {
+    const path = projectConfigPath(projectRoot);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(value, null, 2) + "\n", "utf8");
+  }
+
   it("registers the current agents and commands without removing unrelated entries", async () => {
     const target = await runConfigHook({
       agent: { custom: { description: "keep me" } },
@@ -164,7 +171,7 @@ describe.sequential("config hook characterization", () => {
       writeState({ activePreset: presetName });
       invalidateConfigCache();
       const target = await runConfigHook();
-      const cfg = loadConfig();
+      const cfg = loadConfig({ projectRoot: home });
 
       expect(Object.keys(target.agent ?? {})).toEqual(["fast", "medium", "heavy"]);
 
@@ -202,7 +209,7 @@ describe.sequential("config hook characterization", () => {
   }
 
   it("maps optional thinking and reasoning settings into provider options", async () => {
-    const cfg = loadConfig();
+    const cfg = loadConfig({ projectRoot: home });
     cfg.presets.anthropic!.medium!.thinking = { budgetTokens: 4096 };
     cfg.presets.anthropic!.medium!.reasoning = {
       effort: "high",
@@ -219,7 +226,7 @@ describe.sequential("config hook characterization", () => {
   });
 
   it("omits empty provider options and keeps the Claude prefix on a tier prompt override", async () => {
-    const cfg = loadConfig();
+    const cfg = loadConfig({ projectRoot: home });
     cfg.presets.anthropic!.fast!.thinking = {};
     cfg.presets.anthropic!.fast!.reasoning = {};
     cfg.presets.anthropic!.fast!.prompt = "CUSTOM FAST PROMPT";
@@ -231,6 +238,38 @@ describe.sequential("config hook characterization", () => {
     expect(agent).not.toHaveProperty("options");
     expect(agent?.prompt).toBe(`${prefix}\n\n---\n\nCUSTOM FAST PROMPT`);
     expect(agent?.prompt).not.toContain("ROLE: You are @fast");
+  });
+
+  it("loads project configuration from worktree instead of a nested directory", async () => {
+    const worktree = join(home, "repo");
+    const directory = join(worktree, "packages", "app");
+    mkdirSync(directory, { recursive: true });
+    writeProjectConfig(worktree, {
+      presets: { anthropic: { fast: { model: "test/worktree-model" } } },
+    });
+    writeProjectConfig(directory, {
+      presets: { anthropic: { fast: { model: "test/directory-model" } } },
+    });
+
+    const hooks = await ModelRouterPlugin(fakePluginInput(directory, worktree));
+    const target: MutableOpenCodeConfig = {};
+    await hooks.config!(target as Parameters<NonNullable<typeof hooks.config>>[0]);
+
+    expect(target.agent?.fast?.model).toBe("test/worktree-model");
+  });
+
+  it("ignores a filesystem-root worktree sentinel and uses directory", async () => {
+    const directory = join(home, "non-git-project");
+    mkdirSync(directory, { recursive: true });
+    writeProjectConfig(directory, {
+      presets: { anthropic: { fast: { model: "test/directory-fallback" } } },
+    });
+
+    const hooks = await ModelRouterPlugin(fakePluginInput(directory, "/"));
+    const target: MutableOpenCodeConfig = {};
+    await hooks.config!(target as Parameters<NonNullable<typeof hooks.config>>[0]);
+
+    expect(target.agent?.fast?.model).toBe("test/directory-fallback");
   });
 
   it("does not enable the delegate tool through the old environment variable", async () => {

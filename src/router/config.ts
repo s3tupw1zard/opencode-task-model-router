@@ -1,7 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, parse as parsePath, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  getNodeValue,
+  parseTree,
+  printParseErrorCode,
+  type Node as JsoncNode,
+  type ParseError,
+} from "jsonc-parser";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -78,17 +85,35 @@ export interface RouterState {
 
 export const STATE_FILE_NAME = "opencode-task-model-router.state.json";
 export const LEGACY_STATE_FILE_NAME = "opencode-model-router.state.json";
+export const CONFIG_FILE_NAME = "task-model-router.jsonc";
+
+export type ConfigLayerKind = "bundled" | "global" | "project";
+
+export interface ConfigLayer {
+  kind: ConfigLayerKind;
+  path: string;
+  value: unknown;
+}
+
+export interface ConfigLoadOptions {
+  projectRoot?: string;
+}
+
+export interface LoadedConfig {
+  config: RouterConfig;
+  layers: readonly ConfigLayer[];
+  provenance: ReadonlyMap<string, string>;
+}
 
 // ---------------------------------------------------------------------------
 // Config loader with caching
 // ---------------------------------------------------------------------------
 
-let _cachedConfig: RouterConfig | null = null;
-let _configDirty = true;
+const _configCache = new Map<string, LoadedConfig>();
 
 /** Mark config cache as stale so it is re-read on next access. */
 export function invalidateConfigCache(): void {
-  _configDirty = true;
+  _configCache.clear();
 }
 
 function getPluginRoot(): string {
@@ -98,6 +123,14 @@ function getPluginRoot(): string {
 
 export function configPath(): string {
   return join(getPluginRoot(), "tiers.json");
+}
+
+export function globalConfigPath(): string {
+  return join(homedir(), ".config", "opencode", CONFIG_FILE_NAME);
+}
+
+export function projectConfigPath(projectRoot: string): string {
+  return join(resolve(projectRoot), ".opencode", CONFIG_FILE_NAME);
 }
 
 export function statePath(): string {
@@ -409,20 +442,275 @@ export function validateConfig(raw: unknown): RouterConfig {
   return raw as RouterConfig;
 }
 
-export function loadConfig(): RouterConfig {
-  if (_cachedConfig && !_configDirty) {
-    return _cachedConfig;
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function fieldPath(parent: string, key: string): string {
+  return parent === "$" ? key : `${parent}.${key}`;
+}
+
+function clearProvenanceBranch(
+  provenance: Map<string, string>,
+  path: string,
+): void {
+  const prefix = `${path}.`;
+  for (const key of provenance.keys()) {
+    if (key === path || key.startsWith(prefix)) provenance.delete(key);
+  }
+}
+
+function recordProvenance(
+  value: unknown,
+  source: string,
+  provenance: Map<string, string>,
+  path = "$",
+): void {
+  provenance.set(path, source);
+  if (!isPlainObject(value)) return;
+  for (const [key, child] of Object.entries(value)) {
+    recordProvenance(child, source, provenance, fieldPath(path, key));
+  }
+}
+
+function cloneValue<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => cloneValue(item)) as T;
+  }
+  if (isPlainObject(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [key, cloneValue(child)]),
+    ) as T;
+  }
+  return value;
+}
+
+function mergeLayer(
+  base: unknown,
+  override: unknown,
+  source: string,
+  provenance: Map<string, string>,
+  path = "$",
+): unknown {
+  if (isPlainObject(base) && isPlainObject(override)) {
+    const merged: Record<string, unknown> = { ...base };
+    provenance.set(path, source);
+    for (const [key, value] of Object.entries(override)) {
+      const childPath = fieldPath(path, key);
+      if (Object.hasOwn(merged, key)) {
+        merged[key] = mergeLayer(
+          merged[key],
+          value,
+          source,
+          provenance,
+          childPath,
+        );
+      } else {
+        merged[key] = cloneValue(value);
+        recordProvenance(value, source, provenance, childPath);
+      }
+    }
+    return merged;
   }
 
-  const raw = JSON.parse(readFileSync(configPath(), "utf-8"));
-  const cfg = validateConfig(raw);
+  clearProvenanceBranch(provenance, path);
+  const replacement = cloneValue(override);
+  recordProvenance(replacement, source, provenance, path);
+  return replacement;
+}
 
+function positionAt(text: string, offset: number): { line: number; column: number } {
+  const before = text.slice(0, offset);
+  const lastNewline = before.lastIndexOf("\n");
+  return {
+    line: before.split("\n").length,
+    column: offset - lastNewline,
+  };
+}
+
+function sourceError(
+  path: string,
+  text: string,
+  offset: number,
+  message: string,
+): Error {
+  const { line, column } = positionAt(text, offset);
+  return new Error(`${path}:${line}:${column}: ${message}`);
+}
+
+function assertNoDuplicateKeys(
+  node: JsoncNode,
+  text: string,
+  source: string,
+  parentPath = "$",
+): void {
+  if (node.type === "object") {
+    const seen = new Set<string>();
+    for (const property of node.children ?? []) {
+      const [keyNode, valueNode] = property.children ?? [];
+      const key = keyNode?.value;
+      if (typeof key !== "string") continue;
+      const path = fieldPath(parentPath, key);
+      if (seen.has(key)) {
+        throw sourceError(source, text, keyNode.offset, `duplicate key '${path}'`);
+      }
+      seen.add(key);
+      if (valueNode) assertNoDuplicateKeys(valueNode, text, source, path);
+    }
+    return;
+  }
+
+  if (node.type === "array") {
+    for (const [index, child] of (node.children ?? []).entries()) {
+      assertNoDuplicateKeys(child, text, source, `${parentPath}[${index}]`);
+    }
+  }
+}
+
+function parseConfigLayer(text: string, source: string): unknown {
+  const errors: ParseError[] = [];
+  const tree = parseTree(text, errors, {
+    allowTrailingComma: true,
+    disallowComments: false,
+    allowEmptyContent: false,
+  });
+  if (errors.length > 0) {
+    const first = errors[0]!;
+    throw sourceError(
+      source,
+      text,
+      first.offset,
+      `JSONC parse error: ${printParseErrorCode(first.error)}`,
+    );
+  }
+  if (!tree) {
+    throw sourceError(source, text, 0, "JSONC parse error: empty content");
+  }
+  assertNoDuplicateKeys(tree, text, source);
+  return getNodeValue(tree);
+}
+
+function readLayer(
+  kind: ConfigLayerKind,
+  path: string,
+  optional: boolean,
+): ConfigLayer | undefined {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf-8");
+  } catch (error) {
+    if (
+      optional &&
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      return undefined;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${path}: unable to read configuration: ${message}`);
+  }
+  return { kind, path, value: parseConfigLayer(text, path) };
+}
+
+function normalizeProjectRoot(projectRoot: string | undefined): string | undefined {
+  if (!projectRoot || !projectRoot.trim()) return undefined;
+  const normalized = resolve(projectRoot);
+  return normalized === parsePath(normalized).root ? undefined : normalized;
+}
+
+function validationFieldPath(message: string): string {
+  const normalized = message.replace(/^tiers\.json:\s*/u, "");
+  const keyedBlock = normalized.match(
+    /^(tierCaps|tierPrompts|taskPatterns)\.'([^']+)'/u,
+  );
+  if (keyedBlock) return `${keyedBlock[1]}.${keyedBlock[2]}`;
+
+  const preset = normalized.match(/^preset '([^']+)'/u);
+  if (preset) return `presets.${preset[1]}`;
+
+  const tier = normalized.match(/^tier '([^']+)'/u);
+  if (tier) return `presets.${tier[1]}`;
+
+  const mode = normalized.match(/^mode '([^']+)'/u);
+  if (mode) return `modes.${mode[1]}`;
+
+  const quotedPath = normalized.match(/^'([^']+)'/u)?.[1];
+  if (quotedPath) {
+    return quotedPath.includes(".") ? `presets.${quotedPath}` : quotedPath;
+  }
+  const explicit = message.match(
+    /(?:tiers\.json:\s*)?([A-Za-z][A-Za-z0-9_.]+)\s+must/u,
+  )?.[1];
+  return explicit ?? "$";
+}
+
+function provenanceSource(
+  provenance: ReadonlyMap<string, string>,
+  path: string,
+  fallback: string,
+): string {
+  let current = path;
+  while (current) {
+    const source = provenance.get(current);
+    if (source) return source;
+    const dot = current.lastIndexOf(".");
+    if (dot < 0) break;
+    current = current.slice(0, dot);
+  }
+  return provenance.get("$") ?? fallback;
+}
+
+function validateMergedConfig(
+  raw: unknown,
+  provenance: ReadonlyMap<string, string>,
+  fallbackSource: string,
+): RouterConfig {
+  try {
+    return validateConfig(raw);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const path = validationFieldPath(message);
+    const source = provenanceSource(provenance, path, fallbackSource);
+    throw new Error(`${source}: field '${path}': ${message.replace(/^tiers\.json:\s*/u, "")}`);
+  }
+}
+
+function cacheKey(options: ConfigLoadOptions): string {
+  const projectRoot = normalizeProjectRoot(options.projectRoot);
+  return [configPath(), globalConfigPath(), projectRoot ?? ""].join("\0");
+}
+
+export function loadConfigWithMetadata(
+  options: ConfigLoadOptions = {},
+): LoadedConfig {
+  const key = cacheKey(options);
+  const cached = _configCache.get(key);
+  if (cached) return cached;
+
+  const projectRoot = normalizeProjectRoot(options.projectRoot);
+  const layers = [
+    readLayer("bundled", configPath(), false),
+    readLayer("global", globalConfigPath(), true),
+    ...(projectRoot
+      ? [readLayer("project", projectConfigPath(projectRoot), true)]
+      : []),
+  ].filter((layer): layer is ConfigLayer => layer !== undefined);
+
+  const bundled = layers[0]!;
+  const provenance = new Map<string, string>();
+  let merged = cloneValue(bundled.value);
+  recordProvenance(merged, bundled.path, provenance);
+  for (const layer of layers.slice(1)) {
+    merged = mergeLayer(merged, layer.value, layer.path, provenance);
+  }
+
+  const cfg = validateMergedConfig(merged, provenance, bundled.path);
   const state = readState();
   if (state.activePreset) {
     const resolved = resolvePresetName(cfg, state.activePreset);
-    if (resolved) {
-      cfg.activePreset = resolved;
-    }
+    if (resolved) cfg.activePreset = resolved;
   }
   if (state.activeMode && cfg.modes?.[state.activeMode]) {
     cfg.activeMode = state.activeMode;
@@ -431,9 +719,13 @@ export function loadConfig(): RouterConfig {
     cfg.enforcement = { ...(cfg.enforcement ?? {}), mode: state.enforcementMode };
   }
 
-  _cachedConfig = cfg;
-  _configDirty = false;
-  return cfg;
+  const result: LoadedConfig = { config: cfg, layers, provenance };
+  _configCache.set(key, result);
+  return result;
+}
+
+export function loadConfig(options: ConfigLoadOptions = {}): RouterConfig {
+  return loadConfigWithMetadata(options).config;
 }
 
 // ---------------------------------------------------------------------------
