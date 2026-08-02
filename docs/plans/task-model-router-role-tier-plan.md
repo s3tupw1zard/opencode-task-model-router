@@ -1,8 +1,8 @@
-# Implementation Plan - Role and Tier Routing for `opencode-task-model-router`
+# Implementation Plan - Role and Tier Routing for `@s3tupw1zard/opencode-task-model-router`
 
 > **Status:** Draft, ready for phased implementation
 > **Repository:** `https://github.com/s3tupw1zard/opencode-task-model-router`
-> **Package target:** `opencode-task-model-router`
+> **Package target:** `@s3tupw1zard/opencode-task-model-router`
 > **Scope:** Extend the existing three-tier OpenCode plugin so that it routes independently by task role and model tier, enforces role-based tool policies, counts configurable local and MCP tool classes, and preserves legacy configurations.
 > **Planning date:** 2026-08-01, Europe/Berlin
 
@@ -597,7 +597,7 @@ Acceptance criteria:
 
 Tasks:
 
-- Rename package metadata to `opencode-task-model-router`.
+- Rename package metadata to `@s3tupw1zard/opencode-task-model-router`.
 - Update description, repository, homepage, bugs, and keywords.
 - Rename the state-file namespace.
 - Update user-facing command titles and documentation references.

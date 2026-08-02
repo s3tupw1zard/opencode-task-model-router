@@ -3,8 +3,13 @@
 ## Migrating from `opencode-model-router`
 
 Replace the old package in your OpenCode plugin configuration rather than loading
-both packages. The fork uses the npm package `opencode-task-model-router` and the
+both packages. The fork uses the npm package
+`@s3tupw1zard/opencode-task-model-router` and the
 repository `https://github.com/s3tupw1zard/opencode-task-model-router`.
+
+While the package is in prerelease, configure
+`@s3tupw1zard/opencode-task-model-router@beta` so OpenCode follows the `beta`
+npm dist-tag.
 
 On first start, valid persisted selections are copied from
 `~/.config/opencode/opencode-model-router.state.json` to

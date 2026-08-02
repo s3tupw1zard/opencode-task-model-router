@@ -1,4 +1,4 @@
-# opencode-task-model-router
+# @s3tupw1zard/opencode-task-model-router
 
 > **Use the cheapest model that can do the job. Automatically.**
 
@@ -6,7 +6,7 @@ An [OpenCode](https://opencode.ai) plugin that routes every coding task to the r
 
 ## Why it's different
 
-Most AI coding tools give you one model for everything. You pay Opus prices to run `grep`. opencode-task-model-router changes that with a stack of interlocking ideas:
+Most AI coding tools give you one model for everything. You pay Opus prices to run `grep`. `@s3tupw1zard/opencode-task-model-router` changes that with a stack of interlocking ideas:
 
 **Use a mid-tier model as orchestrator.**
 The orchestrator runs on *every* message. Put Sonnet there, not Opus. Sonnet reads a routing protocol and delegates just as well as Opus — at 4x lower cost. Reserve Opus for when it genuinely matters.
@@ -57,7 +57,7 @@ If you're running Opus (20x cost) for all of it, you're overpaying by **3-10x** 
 
 ## The solution
 
-opencode-task-model-router injects a **delegation protocol** into the system prompt that teaches the orchestrator to:
+`@s3tupw1zard/opencode-task-model-router` injects a **delegation protocol** into the system prompt that teaches the orchestrator to:
 
 1. **Match task to tier** using a configurable task taxonomy
 2. **Split composite tasks** — explore first with a cheap model, then implement with a mid-tier model
@@ -199,14 +199,14 @@ Then install and configure task-model-router to handle the rest.
 ### From npm (recommended)
 ```bash
 # In your opencode project or globally
-npm install -g opencode-task-model-router
+npm install -g @s3tupw1zard/opencode-task-model-router@beta
 ```
 
 Add to `~/.config/opencode/opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-task-model-router"]
+  "plugin": ["@s3tupw1zard/opencode-task-model-router@beta"]
 }
 ```
 
@@ -215,15 +215,28 @@ Add to `~/.config/opencode/opencode.json`:
 git clone https://github.com/s3tupw1zard/opencode-task-model-router
 cd opencode-task-model-router
 npm install
+npm run build
 ```
 
 In `~/.config/opencode/opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["file:///absolute/path/to/opencode-task-model-router/src/index.ts"]
+  "plugin": ["file:///absolute/path/to/opencode-task-model-router/dist/index.js"]
 }
 ```
+
+### Release policy
+
+The scoped package is currently a prerelease. Prerelease versions must be
+published with the `beta` npm dist-tag:
+
+```bash
+npm publish --tag beta
+```
+
+The package metadata also sets `publishConfig.tag` to `beta` as a safeguard.
+Do not publish prereleases under the `latest` dist-tag.
 
 ### Upgrading from `opencode-model-router`
 
@@ -582,7 +595,7 @@ Defines provider fallback order when a delegated task fails:
 
 ## Delegation enforcement (advisory by default)
 
-The read-only cap banners described above are advisory: a well-behaved subagent will respect them, but nothing prevents a model from making one more read after the `[⚠ CAP REACHED]` banner. The **enforcement layer** turns delegation into a produce → verify → accept/escalate loop with independent acceptance and quality escalation. As of v1.3.0 it runs in **`advisory` mode by default**: every non-trivial delegation is verified and any miss surfaces a forcing-note, but nothing is ever hard-blocked (the orchestrator system prompt grows by ~200 tokens for the DoD/acceptance section, and subagents may receive non-blocking guard banners). Set `"mode": "off"` — or run `/router enforce off` — to restore byte-for-byte-unchanged routing with zero added prompt tokens and zero new latency. Hard-blocks only activate in `"mode": "enforced"`.
+The read-only cap banners described above are advisory: a well-behaved subagent will respect them, but nothing prevents a model from making one more read after the `[⚠ CAP REACHED]` banner. The **enforcement layer** turns delegation into a produce → verify → accept/escalate loop with independent acceptance and quality escalation. As of v1.0.0-beta.1 it runs in **`advisory` mode by default**: every non-trivial delegation is verified and any miss surfaces a forcing-note, but nothing is ever hard-blocked (the orchestrator system prompt grows by ~200 tokens for the DoD/acceptance section, and subagents may receive non-blocking guard banners). Set `"mode": "off"` — or run `/router enforce off` — to restore byte-for-byte-unchanged routing with zero added prompt tokens and zero new latency. Hard-blocks only activate in `"mode": "enforced"`.
 
 ### The three enforcement layers
 
