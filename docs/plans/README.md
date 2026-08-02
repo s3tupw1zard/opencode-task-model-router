@@ -5,7 +5,7 @@ This directory holds design and implementation plans for the model-router plugin
 ## Active plans
 
 - [`task-model-router-role-tier-plan.md`](./task-model-router-role-tier-plan.md)
-  - Role and model-tier routing for the `opencode-task-model-router` fork,
+  - Role and model-tier routing for the `@s3tupw1zard/opencode-task-model-router` package,
   including layered JSONC configuration, role tool policies, MCP assignments,
   categorized budgets, controlled delegation, compatibility, tests, and docs.
 - [`model-router-enforcement-and-verification-plan.md`](./model-router-enforcement-and-verification-plan.md)

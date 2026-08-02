@@ -8,7 +8,7 @@
 
 ## What these are
 
-`opencode-task-model-router` ships with enforcement **OFF by default** — with no
+`@s3tupw1zard/opencode-task-model-router` ships with enforcement **OFF by default** — with no
 `enforcement` key in `tiers.json`, the plugin behaves exactly as it did before the
 enforcement work (byte-for-byte identical routing; see GA-1). The blocks below are
 **opt-in, copy-paste examples** you can add under the root of your `tiers.json` to

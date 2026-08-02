@@ -1,8 +1,8 @@
 import { defineConfig } from "vitest/config";
 
-// Vitest configuration for opencode-task-model-router.
+// Vitest configuration for @s3tupw1zard/opencode-task-model-router.
 // - Tests live in the top-level `test/` directory (NEVER under `src/`), so the
-//   published package (files: ["src/", ...]) can never ship tests (plan C4).
+//   published package (files: ["dist/", ...]) can never ship tests (plan C4).
 // - The default run excludes `test/smoke/**`: those are opt-in real-OpenCode
 //   smokes gated behind RUN_OC_SMOKE=1 (run via `npm run smoke`).
 // - Coverage source is `src/`. Thresholds are wired but intentionally left

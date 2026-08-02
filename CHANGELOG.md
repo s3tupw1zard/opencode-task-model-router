@@ -5,16 +5,37 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0-beta.1] - Unreleased
+
+This prerelease starts an independent version line for the scoped package. It
+does not continue the version sequence of the upstream or previously unscoped
+package.
+
+### Added
+
+- Added a compiled ESM release build with TypeScript declarations and source maps.
+- Added package exports for both the package root and OpenCode's `./server`
+  entrypoint.
 
 ### Changed
 
-- Renamed the fork and npm package to `opencode-task-model-router`.
+- Renamed the npm package to `@s3tupw1zard/opencode-task-model-router`.
+- Restricted published files to the compiled `dist/` output and runtime
+  `tiers.json` configuration.
+- Configured public scoped-package publishing with the `beta` npm dist-tag.
 - Moved persisted state to `opencode-task-model-router.state.json`; valid legacy
   state is copied once without modifying the old file.
 - Moved temporary trajectory output to `opencode-task-model-router-trajectory`.
 - Renamed the runtime environment variables from `MODEL_ROUTER_*` to
   `TASK_MODEL_ROUTER_*`. The old names are not automatic aliases.
+
+Prereleases must be published with `npm publish --tag beta`; they must not be
+published under the `latest` dist-tag.
+
+## Historical pre-scope releases
+
+The following entries document inherited project history and are not the
+version lineage of `@s3tupw1zard/opencode-task-model-router`.
 
 ## [1.3.0]
 

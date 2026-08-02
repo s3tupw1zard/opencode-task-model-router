@@ -148,7 +148,9 @@ export function invalidateConfigCache(): void {
 
 function getPluginRoot(): string {
   const __dirname = dirname(fileURLToPath(import.meta.url));
-  return join(__dirname, "../.."); // src/router/ -> plugin root
+  const distRoot = join(__dirname, "..");
+  if (existsSync(join(distRoot, "tiers.json"))) return distRoot;
+  return join(__dirname, "../..");
 }
 
 export function configPath(): string {
