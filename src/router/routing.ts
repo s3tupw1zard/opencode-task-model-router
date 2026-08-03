@@ -1,4 +1,5 @@
 import type { AgentIdentity, NormalizedRouterConfig } from "./config";
+import { formatAgentName } from "./normalize";
 
 export type RoutingErrorCode =
   | "unknown-role"
@@ -279,5 +280,5 @@ export function resolveAgentIdentity(
 ): AgentIdentity {
   const role = classifyTaskRole(task, config);
   const tier = selectModelTier(task, role, config);
-  return { role, tier, agentName: `${role}-${tier}` };
+  return { role, tier, agentName: formatAgentName(role, tier) };
 }

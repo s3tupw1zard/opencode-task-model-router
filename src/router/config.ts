@@ -37,6 +37,7 @@ export type {
   RoleToolPolicy,
   ToolCategory,
 } from "./normalize";
+export { formatAgentName } from "./normalize";
 
 // ---------------------------------------------------------------------------
 // Types

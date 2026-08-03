@@ -130,10 +130,21 @@ describe.sequential("config hook characterization", () => {
     });
 
     expect(Object.keys(target.agent ?? {}).sort()).toEqual([
+      "architecture-heavy",
+      "architecture-medium",
       "custom",
+      "explore-fast",
+      "explore-medium",
       "fast",
       "heavy",
+      "implementation-fast",
+      "implementation-heavy",
+      "implementation-medium",
       "medium",
+      "research-fast",
+      "research-medium",
+      "review-heavy",
+      "review-medium",
     ]);
     expect(target.agent?.custom).toEqual({ description: "keep me" });
 
@@ -173,10 +184,25 @@ describe.sequential("config hook characterization", () => {
       const target = await runConfigHook();
       const cfg = loadConfig({ projectRoot: home });
 
-      expect(Object.keys(target.agent ?? {})).toEqual(["fast", "medium", "heavy"]);
+      expect(Object.keys(target.agent ?? {})).toEqual([
+        "explore-fast",
+        "explore-medium",
+        "research-fast",
+        "research-medium",
+        "implementation-fast",
+        "implementation-medium",
+        "implementation-heavy",
+        "architecture-medium",
+        "architecture-heavy",
+        "review-medium",
+        "review-heavy",
+        "fast",
+        "medium",
+        "heavy",
+      ]);
 
       for (const [tierName, expected] of Object.entries(expectedTiers)) {
-        const [model, variant, maxSteps] = expected;
+        const [model, variant, steps] = expected;
         const agent = target.agent?.[tierName];
         const tier = cfg.presets[presetName]?.[tierName];
         expect(agent).toBeDefined();
@@ -184,15 +210,14 @@ describe.sequential("config hook characterization", () => {
         expect(agent).toMatchObject({
           model,
           mode: "subagent",
-          description: tier?.description,
-          maxSteps,
+          hidden: true,
+          permission: { task: "deny" },
+          steps,
         });
-        expect(agent).toHaveProperty("maxSteps");
-        expect(agent).not.toHaveProperty("steps");
-        expect(agent).not.toHaveProperty("permission");
+        expect(agent).toHaveProperty("steps");
+        expect(agent).not.toHaveProperty("maxSteps");
         expect(agent).not.toHaveProperty("costRatio");
         expect(agent).not.toHaveProperty("whenToUse");
-        expect(agent).not.toHaveProperty("options");
         if (variant === undefined) expect(agent).not.toHaveProperty("variant");
         else expect(agent?.variant).toBe(variant);
 
@@ -204,6 +229,21 @@ describe.sequential("config hook characterization", () => {
         } else {
           expect(agent?.prompt).toBe(tierPrompt);
         }
+      }
+
+      for (const agentName of Object.keys(target.agent ?? {})) {
+        if (expectedTiers[agentName as keyof typeof expectedTiers]) continue;
+        const canonical = target.agent?.[agentName];
+        expect(canonical).toBeDefined();
+        expect(canonical).toMatchObject({
+          mode: "subagent",
+          permission: { task: "deny" },
+        });
+        expect(canonical).not.toHaveProperty("hidden");
+        expect(canonical).toHaveProperty("steps");
+        expect(canonical).not.toHaveProperty("maxSteps");
+        expect(String(canonical?.prompt ?? "")).not.toBe("");
+        expect(String(canonical?.description ?? "")).not.toBe("");
       }
     });
   }

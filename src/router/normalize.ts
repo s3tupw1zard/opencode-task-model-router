@@ -117,6 +117,10 @@ export interface NormalizedDelegationConfig {
   allowedChildren: Record<string, string[]>;
 }
 
+export function formatAgentName(role: string, tier: string): string {
+  return `${role}-${tier}`;
+}
+
 export interface AgentIdentity {
   role: string;
   tier: string;
@@ -490,6 +494,35 @@ function normalizeTier(
   if (merged.prompt !== undefined && typeof merged.prompt !== "string") {
     fail(`${path}.prompt`, "must be a string");
   }
+  if (merged.variant !== undefined && typeof merged.variant !== "string") {
+    fail(`${path}.variant`, "must be a string");
+  }
+  if (merged.color !== undefined && typeof merged.color !== "string") {
+    fail(`${path}.color`, "must be a string");
+  }
+  if (merged.thinking !== undefined) {
+    if (!isPlainObject(merged.thinking)) fail(`${path}.thinking`, "must be an object");
+    const thinking = merged.thinking as Record<string, unknown>;
+    if (thinking.budgetTokens !== undefined) {
+      if (
+        typeof thinking.budgetTokens !== "number" ||
+        !Number.isInteger(thinking.budgetTokens) ||
+        thinking.budgetTokens < 1
+      ) {
+        fail(`${path}.thinking.budgetTokens`, "must be a positive integer");
+      }
+    }
+  }
+  if (merged.reasoning !== undefined) {
+    if (!isPlainObject(merged.reasoning)) fail(`${path}.reasoning`, "must be an object");
+    const reasoning = merged.reasoning as Record<string, unknown>;
+    if (reasoning.effort !== undefined && typeof reasoning.effort !== "string") {
+      fail(`${path}.reasoning.effort`, "must be a string");
+    }
+    if (reasoning.summary !== undefined && typeof reasoning.summary !== "string") {
+      fail(`${path}.reasoning.summary`, "must be a string");
+    }
+  }
   return merged as unknown as TierConfig;
 }
 
@@ -831,11 +864,60 @@ function normalizeDelegation(
   return { maxDepth: value.maxDepth, allowedChildren };
 }
 
+function validateCanonicalName(name: string, kind: string, path: string): void {
+  if (!name || !name.trim()) fail(path, `${kind} must not be empty`);
+  if (name !== name.trim()) fail(path, `${kind} must not have leading or trailing whitespace`);
+}
+
+function validateNames(
+  names: readonly string[],
+  kind: string,
+  basePath: string,
+): void {
+  const seenExact = new Set<string>();
+  const seenLower = new Map<string, string>();
+  for (const name of names) {
+    if (seenExact.has(name)) fail(basePath, `${kind} '${name}' is duplicated`);
+    seenExact.add(name);
+    const lower = name.toLowerCase();
+    const previous = seenLower.get(lower);
+    if (previous && previous !== name) {
+      fail(basePath, `${kind} '${name}' collides case-insensitively with '${previous}'`);
+    }
+    seenLower.set(lower, name);
+  }
+}
+
 function validateReferences(
   config: NormalizedRouterConfig,
   strictCanonical: boolean,
 ): void {
-  const tiers = new Set(Object.keys(config.models));
+  const tierNames = Object.keys(config.models);
+  const roleNames = Object.keys(config.roles);
+  for (const name of tierNames) validateCanonicalName(name, "tier", `models.${name}`);
+  for (const name of roleNames) validateCanonicalName(name, "role", `roles.${name}`);
+  validateNames(tierNames, "tier", "models");
+  validateNames(roleNames, "role", "roles");
+
+  const canonicalNames = new Set<string>();
+  const canonicalLower = new Map<string, string>();
+  for (const role of roleNames) {
+    for (const tier of config.roles[role]!.allowedTiers) {
+      const name = formatAgentName(role, tier);
+      if (canonicalNames.has(name)) {
+        fail(`roles.${role}.allowedTiers`, `generated agent name '${name}' collides with another role-tier combination`);
+      }
+      canonicalNames.add(name);
+      const lower = name.toLowerCase();
+      const previous = canonicalLower.get(lower);
+      if (previous && previous !== name) {
+        fail(`roles.${role}.allowedTiers`, `generated agent name '${name}' collides case-insensitively with '${previous}'`);
+      }
+      canonicalLower.set(lower, name);
+    }
+  }
+
+  const tiers = new Set(tierNames);
   if (!tiers.has(config.defaultTier)) fail("defaultTier", "must reference a configured tier");
   for (const tier of Object.keys(config.taskPatterns ?? {})) {
     if (strictCanonical && !tiers.has(tier)) {
@@ -932,11 +1014,31 @@ function validateReferences(
     }
   }
   for (const [alias, identity] of Object.entries(config.compatibility.aliases)) {
+    validateCanonicalName(alias, "alias", `compatibility.aliases.${alias}`);
+    if (canonicalNames.has(alias)) {
+      fail(`compatibility.aliases.${alias}`, "must not collide with a canonical agent name");
+    }
+    if (canonicalLower.has(alias.toLowerCase())) {
+      fail(`compatibility.aliases.${alias}`, "must not collide case-insensitively with a canonical agent name");
+    }
     if (!roles.has(identity.role)) fail(`compatibility.aliases.${alias}.role`, "references an unknown role");
     if (!tiers.has(identity.tier)) fail(`compatibility.aliases.${alias}.tier`, "references an unknown tier");
     if (!config.roles[identity.role]!.allowedTiers.includes(identity.tier)) {
       fail(`compatibility.aliases.${alias}.tier`, "is not allowed for the alias role");
     }
+    const expectedName = formatAgentName(identity.role, identity.tier);
+    if (identity.agentName !== expectedName) {
+      fail(`compatibility.aliases.${alias}`, `agentName '${identity.agentName}' must match canonical target '${expectedName}'`);
+    }
+  }
+  const aliasLower = new Map<string, string>();
+  for (const alias of Object.keys(config.compatibility.aliases)) {
+    const lower = alias.toLowerCase();
+    const previous = aliasLower.get(lower);
+    if (previous && previous !== alias) {
+      fail(`compatibility.aliases.${alias}`, `case-insensitively collides with alias '${previous}'`);
+    }
+    aliasLower.set(lower, alias);
   }
 }
 
@@ -983,9 +1085,9 @@ export function finalizeNormalizedConfig(
   const aliases: Record<string, AgentIdentity> = {};
   if (legacyAliasesEnabled) {
     const candidates: Record<string, AgentIdentity> = {
-      fast: { role: "explore", tier: "fast", agentName: "explore-fast" },
-      medium: { role: "implementation", tier: "medium", agentName: "implementation-medium" },
-      heavy: { role: "architecture", tier: "heavy", agentName: "architecture-heavy" },
+      fast: { role: "explore", tier: "fast", agentName: formatAgentName("explore", "fast") },
+      medium: { role: "implementation", tier: "medium", agentName: formatAgentName("implementation", "medium") },
+      heavy: { role: "architecture", tier: "heavy", agentName: formatAgentName("architecture", "heavy") },
     };
     for (const [name, identity] of Object.entries(candidates)) {
       if (models[identity.tier] && roles[identity.role]?.allowedTiers.includes(identity.tier)) {
@@ -1002,7 +1104,7 @@ export function finalizeNormalizedConfig(
       aliases[name] = {
         role: alias.role,
         tier: alias.tier,
-        agentName: typeof alias.agentName === "string" ? alias.agentName : `${alias.role}-${alias.tier}`,
+        agentName: typeof alias.agentName === "string" ? alias.agentName : formatAgentName(alias.role, alias.tier),
       };
     }
   }

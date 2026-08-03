@@ -15,6 +15,7 @@ import type {
   Preset,
   ModeConfig,
 } from "./router/config";
+import { buildAgentSpecs } from "./router/agents";
 import { fingerprintToolCall } from "./guard/fingerprint";
 import { detectNarration } from "./guard/narration";
 import {
@@ -149,33 +150,6 @@ function buildRouterOutput(cfg: RouterConfig, args: string): string {
     "- `/router enforce <off|advisory|enforced>` — set hard-block enforcement (persisted)",
     "- `/tiers`, `/preset`, `/budget`, `/bypass`, `/annotate-plan`",
   ].join("\n");
-}
-
-// ---------------------------------------------------------------------------
-// Build agent options from tier config
-// ---------------------------------------------------------------------------
-
-function buildAgentOptions(tier: TierConfig): Record<string, unknown> {
-  const opts: Record<string, unknown> = {};
-
-  // Anthropic thinking config
-  if (tier.thinking) {
-    if (tier.thinking.budgetTokens) {
-      opts.budget_tokens = tier.thinking.budgetTokens;
-    }
-  }
-
-  // OpenAI reasoning config
-  if (tier.reasoning) {
-    if (tier.reasoning.effort) {
-      opts.reasoning_effort = tier.reasoning.effort;
-    }
-    if (tier.reasoning.summary) {
-      opts.reasoning_summary = tier.reasoning.summary;
-    }
-  }
-
-  return Object.keys(opts).length > 0 ? opts : {};
 }
 
 // ---------------------------------------------------------------------------
@@ -321,8 +295,13 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
     .map((candidate) => resolve(candidate))
     .find((candidate) => candidate !== parsePath(candidate).root);
   const configLoadOptions: ConfigLoadOptions = { projectRoot };
-  let cfg = loadConfig(configLoadOptions);
-  const activeTiers = getActiveTiers(cfg);
+// ---------------------------------------------------------------------------
+// Register tier agents + commands at load time
+// ---------------------------------------------------------------------------
+
+let cfg = loadConfig(configLoadOptions);
+const activeTiers = getActiveTiers(cfg);
+const agentSpecs = buildAgentSpecs(cfg);
 
   // Per-plugin-instance session store: owns subagentSessionIDs and subagentCapState.
   const sessionStore = createSessionStore();
@@ -895,45 +874,7 @@ const ModelRouterPlugin: Plugin = async (ctx: PluginInput) => {
     // -----------------------------------------------------------------------
     config: async (opencodeConfig: any) => {
       opencodeConfig.agent ??= {};
-
-      for (const [name, tier] of Object.entries(activeTiers)) {
-        // Resolve prompt: per-tier override wins; otherwise fall back to global tierPrompts[name].
-        const resolvedPrompt = tier.prompt ?? cfg.tierPrompts?.[name];
-
-        // For Claude-backed tiers, prepend an adversarial opener that revokes
-        // the cached "Claude Code exploratory agent" priming for this dispatch.
-        // Detection is by model string, so hybrid presets get the override
-        // only on their Claude-backed tiers.
-        const claudePrefix = isClaudeModel(tier.model)
-          ? `${CLAUDE_TIER_PREFIX[name]}\n\n${CLAUDE_ANTI_NARRATION}`
-          : undefined;
-        const finalPrompt =
-          claudePrefix && resolvedPrompt
-            ? `${claudePrefix}\n\n---\n\n${resolvedPrompt}`
-            : resolvedPrompt;
-
-        const agentDef: Record<string, unknown> = {
-          model: tier.model,
-          mode: "subagent",
-          description: tier.description,
-          maxSteps: tier.steps,
-          prompt: finalPrompt,
-          color: tier.color,
-        };
-
-        // Apply variant (thinking/reasoning mode)
-        if (tier.variant) {
-          agentDef.variant = tier.variant;
-        }
-
-        // Apply provider-specific options
-        const opts = buildAgentOptions(tier);
-        if (Object.keys(opts).length > 0) {
-          agentDef.options = opts;
-        }
-
-        opencodeConfig.agent[name] = agentDef;
-      }
+      Object.assign(opencodeConfig.agent, agentSpecs.byName);
 
       // Register commands
       opencodeConfig.command ??= {};
