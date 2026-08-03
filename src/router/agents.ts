@@ -1,5 +1,6 @@
 import type {
   AgentIdentity,
+  AliasEntry,
   ModelTierOverride,
   NormalizedRouterConfig,
   TierConfig,
@@ -118,6 +119,7 @@ function buildTierContract(
   explicitTierPrompt: string | undefined,
 ): string {
   if (explicitTierPrompt) return explicitTierPrompt;
+  if (resolved.prompt) return resolved.prompt;
 
   const parts: string[] = [`Tier: ${tier}`];
   if (resolved.costRatio !== undefined) parts.push(`Cost ratio: ${resolved.costRatio}`);
@@ -237,7 +239,7 @@ function buildCanonicalSpec(
 }
 
 function buildAliasSpec(
-  identity: AgentIdentity,
+  identity: AliasEntry,
   canonical: AgentSpec,
   config: Readonly<NormalizedRouterConfig>,
 ): AgentSpec {
@@ -248,27 +250,30 @@ function buildAliasSpec(
 
   const resolvedTier = presetTier;
 
-  const prompt = buildAliasPrompt(
-    identity.tier,
-    resolvedTier,
-    config.tierPrompts,
-    resolvedTier.model,
-  );
-  const description = resolvedTier.description ?? canonical.description;
+  // Synthetische Legacy-Aliase behalten den Legacy-Prompt
+  // Konfigurierte Aliase übernehmen den kanonischen Zielprompt
+  const prompt = identity.source === "synthetic-legacy"
+    ? buildAliasPrompt(
+        identity.tier,
+        resolvedTier,
+        config.tierPrompts,
+        resolvedTier.model,
+      )
+    : canonical.prompt;
 
+  // Alle Modell-Parameter werden vom kanonischen Ziel übernommen
   const spec: AgentSpec = {
-    model: resolvedTier.model,
+    model: canonical.model,
     mode: "subagent",
-    description,
+    description: canonical.description,
     prompt,
     permission: { task: "deny" },
     hidden: true,
   };
-  if (resolvedTier.steps !== undefined) spec.steps = resolvedTier.steps;
-  if (resolvedTier.variant) spec.variant = resolvedTier.variant;
-  const options = buildProviderOptions(resolvedTier);
-  if (options) spec.options = options;
-  if (resolvedTier.color) spec.color = resolvedTier.color;
+  if (canonical.steps !== undefined) spec.steps = canonical.steps;
+  if (canonical.variant) spec.variant = canonical.variant;
+  if (canonical.options) spec.options = canonical.options;
+  if (canonical.color) spec.color = canonical.color;
   return spec;
 }
 

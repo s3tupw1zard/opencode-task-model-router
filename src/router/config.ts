@@ -20,6 +20,8 @@ import {
 
 export type {
   AgentIdentity,
+  AliasEntry,
+  AliasSource,
   BudgetCategory,
   BudgetLimits,
   CompatibilityMetadata,

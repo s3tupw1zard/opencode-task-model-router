@@ -127,6 +127,12 @@ export interface AgentIdentity {
   agentName: string;
 }
 
+export type AliasSource = "synthetic-legacy" | "configured";
+
+export interface AliasEntry extends AgentIdentity {
+  source: AliasSource;
+}
+
 export interface ConfigWarning {
   code:
     | "implicit-schema-v1"
@@ -146,7 +152,7 @@ export interface CompatibilityMetadata {
   sourceSchemas: ConfigSchemaVersion[];
   legacyInput: boolean;
   legacyAliasesEnabled: boolean;
-  aliases: Record<string, AgentIdentity>;
+  aliases: Record<string, AliasEntry>;
   warnings: readonly ConfigWarning[];
 }
 
@@ -1082,12 +1088,12 @@ export function finalizeNormalizedConfig(
     fail("compatibility.legacyAliases", "must be a boolean");
   }
   const legacyAliasesEnabled = compatibilityInput.legacyAliases !== false;
-  const aliases: Record<string, AgentIdentity> = {};
+  const aliases: Record<string, AliasEntry> = {};
   if (legacyAliasesEnabled) {
-    const candidates: Record<string, AgentIdentity> = {
-      fast: { role: "explore", tier: "fast", agentName: formatAgentName("explore", "fast") },
-      medium: { role: "implementation", tier: "medium", agentName: formatAgentName("implementation", "medium") },
-      heavy: { role: "architecture", tier: "heavy", agentName: formatAgentName("architecture", "heavy") },
+    const candidates: Record<string, AliasEntry> = {
+      fast: { role: "explore", tier: "fast", agentName: formatAgentName("explore", "fast"), source: "synthetic-legacy" },
+      medium: { role: "implementation", tier: "medium", agentName: formatAgentName("implementation", "medium"), source: "synthetic-legacy" },
+      heavy: { role: "architecture", tier: "heavy", agentName: formatAgentName("architecture", "heavy"), source: "synthetic-legacy" },
     };
     for (const [name, identity] of Object.entries(candidates)) {
       if (models[identity.tier] && roles[identity.role]?.allowedTiers.includes(identity.tier)) {
@@ -1105,6 +1111,7 @@ export function finalizeNormalizedConfig(
         role: alias.role,
         tier: alias.tier,
         agentName: typeof alias.agentName === "string" ? alias.agentName : formatAgentName(alias.role, alias.tier),
+        source: "configured",
       };
     }
   }

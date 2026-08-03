@@ -111,13 +111,14 @@ describe("canonical configuration normalization", () => {
     });
     expect(config.roles.implementation.allowedTiers).toEqual(["fast", "medium", "heavy"]);
     expect(config.compatibility.aliases).toEqual({
-      fast: { role: "explore", tier: "fast", agentName: "explore-fast" },
+      fast: { role: "explore", tier: "fast", agentName: "explore-fast", source: "synthetic-legacy" },
       medium: {
         role: "implementation",
         tier: "medium",
         agentName: "implementation-medium",
+        source: "synthetic-legacy",
       },
-      heavy: { role: "architecture", tier: "heavy", agentName: "architecture-heavy" },
+      heavy: { role: "architecture", tier: "heavy", agentName: "architecture-heavy", source: "synthetic-legacy" },
     });
   });
 

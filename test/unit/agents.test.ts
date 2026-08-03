@@ -168,16 +168,19 @@ describe("buildAgentSpecs pure generation", () => {
       role: "explore",
       tier: "fast",
       agentName: "explore-fast",
+      source: "synthetic-legacy",
     });
     expect(specs.aliases[1]?.identity).toEqual({
       role: "implementation",
       tier: "medium",
       agentName: "implementation-medium",
+      source: "synthetic-legacy",
     });
     expect(specs.aliases[2]?.identity).toEqual({
       role: "architecture",
       tier: "heavy",
       agentName: "architecture-heavy",
+      source: "synthetic-legacy",
     });
   });
 
@@ -222,6 +225,7 @@ describe("buildAgentSpecs pure generation", () => {
       role: "implementation",
       tier: "fast",
       agentName: "implementation-fast",
+      source: "configured",
     });
   });
 
@@ -348,6 +352,48 @@ describe("buildAgentSpecs pure generation", () => {
     );
   });
 
+  it("uses configured tier prompt from top-level models in canonical agents", () => {
+    const specs = buildAgentSpecs(
+      baseConfig({
+        models: {
+          fast: model("fast", 1),
+          medium: model("medium", 5),
+          heavy: model("heavy", 20),
+        },
+      }),
+    );
+    // Base model without explicit prompt uses generic tier contract
+    expect(specs.byName["explore-fast"]?.prompt).toContain("Tier: fast");
+  });
+
+  it("uses configured tier prompt from preset in canonical agents", () => {
+    const specs = buildAgentSpecs(
+      baseConfig({
+        presets: { test: { fast: { prompt: "Custom fast tier instructions" } } },
+      }),
+    );
+    expect(specs.byName["explore-fast"]?.prompt).toContain("Custom fast tier instructions");
+  });
+
+  it("role model override prompt wins over preset tier prompt", () => {
+    const specs = buildAgentSpecs(
+      baseConfig({
+        presets: { test: { medium: { prompt: "Preset medium prompt" } } },
+        roles: {
+          implementation: {
+            modelOverrides: {
+              medium: { prompt: "Override medium prompt for implementation" },
+            },
+          },
+        },
+      }),
+    );
+    expect(specs.byName["implementation-medium"]?.prompt).toContain(
+      "Override medium prompt for implementation",
+    );
+    expect(specs.byName["research-medium"]?.prompt).toContain("Preset medium prompt");
+  });
+
   it("rejects duplicate canonical agent names produced by hyphen collisions", () => {
     expect(() =>
       validateConfig({
@@ -432,5 +478,91 @@ describe("buildAgentSpecs pure generation", () => {
     expect(specs.canonical.length).toBeGreaterThanOrEqual(2);
     expect(specs.canonical.some((entry) => entry.agentName === "documentation-economy")).toBe(true);
     expect(specs.canonical.some((entry) => entry.agentName === "documentation-premium")).toBe(true);
+  });
+
+  it("synthetic legacy aliases retain legacy prompt but inherit canonical model parameters", () => {
+    const specs = buildAgentSpecs(
+      baseConfig({
+        roles: {
+          implementation: {
+            modelOverrides: {
+              medium: { model: "override/medium", variant: "override-variant", steps: 99 },
+            },
+          },
+        },
+        tierPrompts: { medium: "Legacy medium prompt" },
+      }),
+    );
+
+    // Canonical agent uses role override model and prompt
+    const canonical = specs.byName["implementation-medium"];
+    expect(canonical?.model).toBe("override/medium");
+    expect(canonical?.variant).toBe("override-variant");
+    expect(canonical?.steps).toBe(99);
+    expect(canonical?.prompt).not.toContain("Legacy medium prompt");
+
+    // Synthetic legacy alias inherits model parameters but uses legacy prompt
+    const alias = specs.byName["medium"];
+    expect(alias?.model).toBe("override/medium");
+    expect(alias?.variant).toBe("override-variant");
+    expect(alias?.steps).toBe(99);
+    expect(alias?.prompt).toContain("Legacy medium prompt");
+    expect(alias?.hidden).toBe(true);
+  });
+
+  it("configured aliases inherit canonical target prompt and all model parameters", () => {
+    const specs = buildAgentSpecs(
+      baseConfig({
+        roles: {
+          implementation: {
+            modelOverrides: {
+              medium: { model: "override/medium", variant: "override-variant", steps: 99 },
+            },
+          },
+        },
+        compatibility: {
+          legacyAliases: false,
+          aliases: {
+            "quick-review": { role: "implementation", tier: "medium" },
+          },
+        },
+      }),
+    );
+
+    const canonical = specs.byName["implementation-medium"];
+    const alias = specs.byName["quick-review"];
+
+    // Configured alias inherits everything from canonical target
+    expect(alias?.model).toBe(canonical?.model);
+    expect(alias?.variant).toBe(canonical?.variant);
+    expect(alias?.steps).toBe(canonical?.steps);
+    expect(alias?.prompt).toBe(canonical?.prompt);
+    expect(alias?.hidden).toBe(true);
+  });
+
+  it("rejects case-insensitive alias-to-alias collisions", () => {
+    expect(() =>
+      validateConfig({
+        schemaVersion: 2,
+        activePreset: "test",
+        models: {
+          fast: model("fast", 1),
+          medium: model("medium", 5),
+        },
+        compatibility: {
+          legacyAliases: false,
+          aliases: {
+            "custom-alias-1": { role: "review", tier: "medium" },
+            "CUSTOM-ALIAS-1": { role: "review", tier: "medium" },
+          },
+        },
+        roles: {
+          review: {
+            allowedTiers: ["fast", "medium"],
+            defaultTier: "medium",
+          },
+        },
+      }),
+    ).toThrow(/case-insensitively collides with alias/);
   });
 });

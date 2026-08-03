@@ -202,7 +202,7 @@ describe("router-command integration", () => {
     expect(out.parts).toEqual([]);
   });
 
-  it("updates prompt routing immediately but captures agent models until restart", async () => {
+  it("updates prompt routing immediately but captures all agent models until restart", async () => {
     await runCommand("preset", "openai");
 
     const transformed = { system: [] as string[] };
@@ -215,18 +215,22 @@ describe("router-command integration", () => {
     );
     expect(transformed.system[0]).toContain("Preset: openai");
 
+    // Before restart: agent specs are frozen from initial load (anthropic preset)
     const capturedConfig: any = {};
     await hooks.config(capturedConfig);
-    expect(capturedConfig.agent.fast.model).toBe(
-      "anthropic/claude-haiku-4-5",
-    );
+    expect(capturedConfig.agent.fast.model).toBe("anthropic/claude-haiku-4-5");
+    expect(capturedConfig.agent["explore-fast"].model).toBe("anthropic/claude-haiku-4-5");
+    expect(capturedConfig.agent["implementation-medium"].model).toBe("anthropic/claude-sonnet-4-6");
+    expect(capturedConfig.agent["architecture-heavy"].model).toBe("anthropic/claude-opus-4-8");
 
+    // After restart: agent specs reflect new preset (openai)
     invalidateConfigCache();
     const restartedHooks: any = await ModelRouterPlugin({} as any);
     const restartedConfig: any = {};
     await restartedHooks.config(restartedConfig);
-    expect(restartedConfig.agent.fast.model).toBe(
-      "openai/gpt-5.4-mini-fast",
-    );
+    expect(restartedConfig.agent.fast.model).toBe("openai/gpt-5.4-mini-fast");
+    expect(restartedConfig.agent["explore-fast"].model).toBe("openai/gpt-5.4-mini-fast");
+    expect(restartedConfig.agent["implementation-medium"].model).toBe("openai/gpt-5.5-fast");
+    expect(restartedConfig.agent["architecture-heavy"].model).toBe("openai/gpt-5.5-fast");
   });
 });
