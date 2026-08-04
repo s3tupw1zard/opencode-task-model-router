@@ -20,6 +20,8 @@ import {
 
 export type {
   AgentIdentity,
+  AliasEntry,
+  AliasSource,
   BudgetCategory,
   BudgetLimits,
   CompatibilityMetadata,
@@ -37,6 +39,7 @@ export type {
   RoleToolPolicy,
   ToolCategory,
 } from "./normalize";
+export { formatAgentName } from "./normalize";
 
 // ---------------------------------------------------------------------------
 // Types

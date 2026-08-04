@@ -111,13 +111,14 @@ describe("canonical configuration normalization", () => {
     });
     expect(config.roles.implementation.allowedTiers).toEqual(["fast", "medium", "heavy"]);
     expect(config.compatibility.aliases).toEqual({
-      fast: { role: "explore", tier: "fast", agentName: "explore-fast" },
+      fast: { role: "explore", tier: "fast", agentName: "explore-fast", source: "synthetic-legacy" },
       medium: {
         role: "implementation",
         tier: "medium",
         agentName: "implementation-medium",
+        source: "synthetic-legacy",
       },
-      heavy: { role: "architecture", tier: "heavy", agentName: "architecture-heavy" },
+      heavy: { role: "architecture", tier: "heavy", agentName: "architecture-heavy", source: "synthetic-legacy" },
     });
   });
 
@@ -251,6 +252,16 @@ describe("canonical cross-reference validation", () => {
     expect(() => validateConfig(v2WithFast({ steps: 0 }))).toThrow(/steps/);
     expect(() => validateConfig(v2WithFast({ prompt: 1 }))).toThrow(/prompt/);
     expect(() => validateConfig(v2WithFast({ whenToUse: [""] }))).toThrow(/empty strings/);
+    // Test für leere model Felder (Zeile 476-477)
+    expect(() => validateConfig(v2WithFast({ model: "" }))).toThrow(/must be a non-empty string/);
+    // Test für ungültige variant Felder (Zeile 507-508)
+    expect(() => validateConfig(v2WithFast({ variant: 123 }))).toThrow(/must be a string/);
+    // Test für ungültige color Felder (Zeile 518-519)
+    expect(() => validateConfig(v2WithFast({ color: 123 }))).toThrow(/must be a string/);
+    // Test für ungültige thinking Objekte (Zeile 526-527)
+    expect(() => validateConfig(v2WithFast({ thinking: "invalid" }))).toThrow(/must be an object/);
+    // Test für ungültige reasoning Objekte (Zeile 529-530)
+    expect(() => validateConfig(v2WithFast({ reasoning: "invalid" }))).toThrow(/must be an object/);
   });
 
   it("rejects missing role tiers and unsupported role defaults", () => {
