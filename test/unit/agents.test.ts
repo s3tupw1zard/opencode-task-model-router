@@ -565,4 +565,140 @@ describe("buildAgentSpecs pure generation", () => {
       }),
     ).toThrow(/case-insensitively collides with alias/);
   });
+
+  it("resolves tier from base model when not in active preset", () => {
+    const config = baseConfig({
+      presets: { test: {} }, // Preset ohne Einträge
+    });
+    const specs = buildAgentSpecs(config);
+    expect(specs.byName["explore-fast"]?.model).toBe("test/fast");
+  });
+
+  it("builds canonical spec with role override but no preset override", () => {
+    const config = validateConfig({
+      schemaVersion: 2,
+      activePreset: "test",
+      models: {
+        fast: model("fast", 1),
+        medium: model("medium", 5),
+        heavy: model("heavy", 20),
+      },
+      presets: {
+        test: {}, // Leeres Preset - fällt auf models zurück
+      },
+      roles: {
+        explore: {
+          allowedTiers: ["fast", "medium"],
+          defaultTier: "fast",
+          modelOverrides: {
+            fast: { model: "override/fast", variant: "override-variant" },
+          },
+        },
+      },
+      compatibility: { legacyAliases: false },
+    });
+    const specs = buildAgentSpecs(config);
+    // explore-fast sollte das Role-Override verwenden
+    expect(specs.byName["explore-fast"]?.model).toBe("override/fast");
+    expect(specs.byName["explore-fast"]?.variant).toBe("override-variant");
+    // explore-medium sollte auf das Base-Model zurückfallen
+    expect(specs.byName["explore-medium"]?.model).toBe("test/medium");
+  });
+
+  it("resolveTierModel falls back to base model when preset tier is missing", () => {
+    // Erstelle eine manuelle NormalizedRouterConfig, bei der presetTier fehlt
+    const config: any = {
+      schemaVersion: 2 as const,
+      activePreset: "test",
+      defaultRole: "explore",
+      defaultTier: "fast",
+      models: {
+        fast: model("fast", 1),
+      },
+      presets: {
+        test: {}, // Kein Eintrag für 'fast'
+      },
+      roles: {
+        explore: {
+          description: "Explore role",
+          prompt: "Explore",
+          returnProtocol: "Return",
+          defaultTier: "fast",
+          allowedTiers: ["fast"],
+          taskPatterns: [],
+          modelOverrides: {},
+          tools: {
+            allowCategories: [],
+            denyCategories: [],
+            allowMcp: [],
+            denyMcp: [],
+            allowPatterns: [],
+            denyPatterns: [],
+            allowCommands: [],
+            denyCommands: [],
+          },
+        },
+      },
+      tools: { categories: {}, mcp: {} },
+      budgets: { global: {}, roles: {}, tiers: {}, roleTiers: {} },
+      delegation: { maxDepth: 1, allowedChildren: {} },
+      compatibility: {
+        sourceSchemas: [2],
+        legacyInput: false,
+        legacyAliasesEnabled: false,
+        aliases: {},
+        warnings: [],
+      },
+    };
+    const specs = buildAgentSpecs(config);
+    // Sollte das Base-Model verwenden, da presetTier fehlt
+    expect(specs.byName["explore-fast"]?.model).toBe("test/fast");
+  });
+
+  it("resolveTierModel throws when tier is not configured", () => {
+    // Erstelle eine manuelle NormalizedRouterConfig, bei der tier nicht in models ist
+    const config: any = {
+      schemaVersion: 2 as const,
+      activePreset: "test",
+      defaultRole: "explore",
+      defaultTier: "fast",
+      models: {}, // Keine Modelle
+      presets: {
+        test: { fast: { model: "test/fast" } },
+      },
+      roles: {
+        explore: {
+          description: "Explore role",
+          prompt: "Explore",
+          returnProtocol: "Return",
+          defaultTier: "fast",
+          allowedTiers: ["fast"],
+          taskPatterns: [],
+          modelOverrides: {},
+          tools: {
+            allowCategories: [],
+            denyCategories: [],
+            allowMcp: [],
+            denyMcp: [],
+            allowPatterns: [],
+            denyPatterns: [],
+            allowCommands: [],
+            denyCommands: [],
+          },
+        },
+      },
+      tools: { categories: {}, mcp: {} },
+      budgets: { global: {}, roles: {}, tiers: {}, roleTiers: {} },
+      delegation: { maxDepth: 1, allowedChildren: {} },
+      compatibility: {
+        sourceSchemas: [2],
+        legacyInput: false,
+        legacyAliasesEnabled: false,
+        aliases: {},
+        warnings: [],
+      },
+    };
+    // Sollte einen Error werfen, da tier nicht in models ist
+    expect(() => buildAgentSpecs(config)).toThrow(/is not configured/);
+  });
 });
