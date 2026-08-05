@@ -8,6 +8,7 @@ import { fingerprintToolCall } from "../guard/fingerprint";
 export type Cap = number | "none";
 
 export interface SubagentState {
+  role: string;
   tierName: string;
   cap: Cap;
   calls: number;
@@ -175,6 +176,11 @@ export function createSessionStore() {
       return subagentCapState.get(sessionID)?.tierName ?? null;
     },
 
+    /** Returns the role name for a tracked subagent session, or null. */
+    getRole(sessionID: string): string | null {
+      return subagentCapState.get(sessionID)?.role ?? null;
+    },
+
     /** Returns true when the session was classified as trivial at dispatch time. */
     isTrivial(sessionID: string): boolean {
       return subagentCapState.get(sessionID)?.trivial === true;
@@ -185,10 +191,11 @@ export function createSessionStore() {
      * Layer-1 (tool.execute.before) guards it like any other subagent. trivial:false
      * ensures the producer is always fully enforced (never downgraded to advisory).
      */
-    registerProducerSession(sessionID: string, tier: string, cfg: RouterConfig): void {
+    registerProducerSession(sessionID: string, tier: string, role: string, cfg: RouterConfig): void {
       subagentSessionIDs.add(sessionID);
       const baseline = cfg.tierCaps?.[tier] ?? DEFAULT_TIER_CAPS[tier] ?? 5;
       subagentCapState.set(sessionID, {
+        role,
         tierName: tier,
         cap: baseline,
         calls: 0,
@@ -214,6 +221,7 @@ export function createSessionStore() {
       output: unknown,
       cfg: RouterConfig,
       tierNames: string[],
+      role: string | null,
     ): void {
       if (input.agent && tierNames.includes(input.agent)) {
         subagentSessionIDs.add(input.sessionID);
@@ -227,6 +235,7 @@ export function createSessionStore() {
           cfg.tierCaps?.[tierName] ?? DEFAULT_TIER_CAPS[tierName] ?? 5;
         const cap: Cap = override ?? baseline;
         subagentCapState.set(input.sessionID, {
+          role: role ?? "",
           tierName,
           cap,
           calls: 0,

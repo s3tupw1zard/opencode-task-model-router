@@ -26,9 +26,9 @@ describe("guard-before-wiring integration", () => {
     delete process.env.TASK_MODEL_ROUTER_ENFORCE;
     invalidateConfigCache();
     hooks = await ModelRouterPlugin({} as any);
-    // Register "SUB" as a subagent session by passing agent:"fast"
-    // which matches the "fast" tier key in the default anthropic preset.
-    await hooks["chat.message"]({ sessionID: "SUB", agent: "fast" }, { parts: [] });
+    // Register "SUB" as a subagent session by passing agent:"medium"
+    // which matches the "medium" tier key in the default anthropic preset.
+    await hooks["chat.message"]({ sessionID: "SUB", agent: "medium" }, { parts: [] });
   });
 
   afterEach(() => {

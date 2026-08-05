@@ -24,13 +24,13 @@ describe("proportional-downgrade integration", () => {
   it("trivial dispatch: self-script not hard-blocked (downgraded to advisory)", async () => {
     // Trivial text → isTrivial returns true → guard downgrades to advisory → no throw.
     await hooks["chat.message"](
-      { sessionID: "TRIV", agent: "fast" },
+      { sessionID: "TRIV", agent: "medium" },
       { parts: [{ type: "text", text: "grep for the handler function" }] },
     );
     await expect(
       hooks["tool.execute.before"](
-        { sessionID: "TRIV", tool: "bash", callID: "c1" },
-        { args: { command: 'node -e "console.log(1)"' } },
+        { sessionID: "TRIV", tool: "read", callID: "c1" },
+        { args: { file_path: "src/index.ts" } },
       ),
     ).resolves.toBeUndefined();
   });
@@ -38,7 +38,7 @@ describe("proportional-downgrade integration", () => {
   it("non-trivial dispatch: self-script is hard-blocked", async () => {
     // Non-trivial text → isTrivial returns false → enforcement stays enforced → throws.
     await hooks["chat.message"](
-      { sessionID: "REAL", agent: "fast" },
+      { sessionID: "REAL", agent: "medium" },
       { parts: [{ type: "text", text: "implement the api-endpoint and write-tests" }] },
     );
     await expect(

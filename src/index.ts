@@ -16,6 +16,7 @@ import type {
   ModeConfig,
 } from "./router/config";
 import { buildAgentSpecs } from "./router/agents";
+import { resolveAgentIdentity } from "./router/routing";
 import { fingerprintToolCall } from "./guard/fingerprint";
 import { detectNarration } from "./guard/narration";
 import {
@@ -28,6 +29,7 @@ import {
   assembleSystemPrompt,
 } from "./router/protocol";
 import { resolveEnforcementMode } from "./router/enforcement";
+import { classifyTool, resolveRoleFromAgentName } from "./router/tool-policy";
 import {
   createSessionStore,
   parseCapDirective,
@@ -510,7 +512,8 @@ const agentSpecs = buildAgentSpecs(cfg);
               }
               // Compose with Layer 1: guard the plugin-created producer session.
               try {
-                sessionStore.registerProducerSession(producerSid, tier, activeCfg);
+                const identity = resolveAgentIdentity(args.task, activeCfg);
+                sessionStore.registerProducerSession(producerSid, tier, identity.role, activeCfg);
               } catch {
                 // non-fatal
               }
@@ -664,7 +667,9 @@ const agentSpecs = buildAgentSpecs(cfg);
         cfg = loadConfig(configLoadOptions);
       } catch {}
       const tierNames = Object.keys(getActiveTiers(cfg));
-      sessionStore.registerFromChatMessage(input, output, cfg, tierNames);
+      const agentName = input?.agent;
+      const role = agentName ? resolveRoleFromAgentName(agentName, cfg) : null;
+      sessionStore.registerFromChatMessage(input, output, cfg, tierNames, role);
 
       // Record-only: initialise a trajectory scorecard for tracked subagents.
       const sid = input?.sessionID;
@@ -674,10 +679,9 @@ const agentSpecs = buildAgentSpecs(cfg);
     },
 
     // -----------------------------------------------------------------------
-    // Hard-block enforcement (Layer 1). Fires before tool execution; only
-    // engaged for subagent sessions when enforcement mode is advisory/enforced.
-    // Throws to abort the tool call when a guard fires; never throws for
-    // non-subagent sessions or when enforcement is off (GA-1 preserved).
+    // Tool policy enforcement (Phase 7) + Hard-block enforcement (Layer 1).
+    // Fires before tool execution; only engaged for subagent sessions.
+    // Throws to abort the tool call when a policy or guard fires.
     // -----------------------------------------------------------------------
     "tool.execute.before": async (input: any, output: any) => {
       if (bypassed) return;
@@ -685,6 +689,47 @@ const agentSpecs = buildAgentSpecs(cfg);
       if (!sid || !sessionStore.isSubagent(sid) || typeof input?.tool !== "string") {
         return;
       }
+
+      // Phase 7: Tool policy enforcement
+      const role = sessionStore.getRole(sid);
+      if (role) {
+        const roleConfig = cfg.roles[role];
+        if (roleConfig) {
+          const { decision, reason } = classifyTool(
+            input.tool,
+            output?.args,
+            roleConfig,
+            cfg.tools,
+          );
+
+          const denied =
+            decision === "deny" ||
+            (decision === "unknown" && cfg.tools.unknownToolPolicy === "deny");
+
+          if (denied) {
+            trajectoryStore.recordToolEvent(sid, {
+              tool: input.tool,
+              readOnly: READ_ONLY_TOOLS.has(input.tool),
+              blocked: true,
+              policyDecision: "deny",
+              policyReason: reason,
+            });
+            throw new Error(
+              `[router] Tool policy denied: ${input.tool} — ${reason}`,
+            );
+          }
+
+          if (decision === "unknown" && cfg.tools.unknownToolPolicy === "warn") {
+            console.warn(`[router] Unknown tool: ${input.tool} — ${reason}`);
+          }
+        } else {
+          console.warn(
+            `[router] Role '${role}' not found in config, skipping policy check`,
+          );
+        }
+      }
+
+      // Layer 1: Guard enforcement
       let res;
       try {
         res = guardBeforeCall({
@@ -706,6 +751,8 @@ const agentSpecs = buildAgentSpecs(cfg);
           readOnly: READ_ONLY_TOOLS.has(input.tool),
           blocked: true,
           selfScript: res.guard === "anti_self_script",
+          policyDecision: "deny",
+          policyReason: res.message,
         });
         throw new Error(res.message);
       }

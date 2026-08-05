@@ -11,6 +11,8 @@ export interface TrajectoryToolEvent {
   deliverable?: boolean;
   ok?: boolean;
   redundant?: boolean;
+  policyDecision?: "allow" | "deny" | "unknown" | null;
+  policyReason?: string;
 }
 
 export interface TrajectoryState {
