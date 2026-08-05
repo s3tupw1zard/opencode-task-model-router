@@ -48,6 +48,7 @@ describe("fingerprintToolCall golden", () => {
 describe("buildCapBanner golden", () => {
   it("under cap no warning", () => {
     const state = {
+      role: "explore",
       tierName: "fast",
       cap: 8 as Cap,
       calls: 3,
@@ -59,6 +60,7 @@ describe("buildCapBanner golden", () => {
 
   it("cap warning 2 remaining", () => {
     const state = {
+      role: "explore",
       tierName: "fast",
       cap: 8 as Cap,
       calls: 6,
@@ -70,6 +72,7 @@ describe("buildCapBanner golden", () => {
 
   it("cap reached", () => {
     const state = {
+      role: "explore",
       tierName: "medium",
       cap: 5 as Cap,
       calls: 5,
@@ -81,6 +84,7 @@ describe("buildCapBanner golden", () => {
 
   it("redundant call", () => {
     const state = {
+      role: "explore",
       tierName: "fast",
       cap: 8 as Cap,
       calls: 4,
@@ -92,6 +96,7 @@ describe("buildCapBanner golden", () => {
 
   it("cap none unlimited", () => {
     const state = {
+      role: "explore",
       tierName: "custom",
       cap: "none" as Cap,
       calls: 10,

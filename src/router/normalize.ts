@@ -98,9 +98,12 @@ export interface McpToolConfig {
   writeCategory: "externalWrite" | "memoryWrite";
 }
 
+export type UnknownToolPolicy = "allow" | "deny" | "warn";
+
 export interface NormalizedToolsConfig {
   categories: Record<ToolCategory, string[]>;
   mcp: Record<string, McpToolConfig>;
+  unknownToolPolicy: UnknownToolPolicy;
 }
 
 export type BudgetLimits = Partial<Record<BudgetCategory, number>>;
@@ -338,6 +341,7 @@ const DEFAULT_TOOLS: NormalizedToolsConfig = {
       writeCategory: "externalWrite",
     },
   },
+  unknownToolPolicy: "deny",
 };
 
 const DEFAULT_ROLE_BUDGETS: Record<string, BudgetLimits> = {
@@ -795,7 +799,18 @@ function normalizeTools(raw: unknown): NormalizedToolsConfig {
       writeCategory: writeCategory as McpToolConfig["writeCategory"],
     };
   }
-  return { categories: categories as Record<ToolCategory, string[]>, mcp };
+  
+  // Validate unknownToolPolicy
+  const unknownToolPolicy = (merged.unknownToolPolicy ?? "deny") as string;
+  if (!["allow", "deny", "warn"].includes(unknownToolPolicy)) {
+    fail("tools.unknownToolPolicy", "must be 'allow', 'deny', or 'warn'");
+  }
+  
+  return {
+    categories: categories as Record<ToolCategory, string[]>,
+    mcp,
+    unknownToolPolicy: unknownToolPolicy as UnknownToolPolicy,
+  };
 }
 
 function validateBudgetLimits(raw: unknown, path: string): BudgetLimits {

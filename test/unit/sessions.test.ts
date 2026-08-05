@@ -38,7 +38,7 @@ describe("parseCapDirective", () => {
 });
 
 function st(partial: Partial<SubagentState> & { cap: Cap; calls: number }): SubagentState {
-  return { tierName: "fast", seen: new Map(), trivial: false, ...partial };
+  return { role: "explore", tierName: "fast", seen: new Map(), trivial: false, ...partial };
 }
 
 describe("buildCapBanner", () => {
@@ -87,13 +87,13 @@ describe("createSessionStore", () => {
 
   it("ignores messages whose agent is not a tier name", () => {
     const store = createSessionStore();
-    store.registerFromChatMessage({ agent: "build", sessionID: "ses_a" }, dispatch("work"), cfg, tierNames);
+    store.registerFromChatMessage({ agent: "build", sessionID: "ses_a" }, dispatch("work"), cfg, tierNames, "explore");
     expect(store.isSubagent("ses_a")).toBe(false);
   });
 
   it("tracks a subagent session dispatched to a tier agent", () => {
     const store = createSessionStore();
-    store.registerFromChatMessage({ agent: "fast", sessionID: "ses_b" }, dispatch("do recon"), cfg, tierNames);
+    store.registerFromChatMessage({ agent: "fast", sessionID: "ses_b" }, dispatch("do recon"), cfg, tierNames, "explore");
     expect(store.isSubagent("ses_b")).toBe(true);
   });
 
@@ -106,7 +106,7 @@ describe("createSessionStore", () => {
 
   it("appends a cap banner to read-only tool output, preserving existing text", () => {
     const store = createSessionStore();
-    store.registerFromChatMessage({ agent: "fast", sessionID: "ses_c" }, dispatch("recon"), cfg, tierNames);
+    store.registerFromChatMessage({ agent: "fast", sessionID: "ses_c" }, dispatch("recon"), cfg, tierNames, "explore");
     const out: Record<string, unknown> = { output: "RESULT" };
     store.recordToolCall({ sessionID: "ses_c", tool: "read", args: { file_path: "a.ts" } }, out);
     expect(out.output).toContain("RESULT\n\n");
@@ -115,7 +115,7 @@ describe("createSessionStore", () => {
 
   it("ignores non-read-only tools (e.g. edit) for tracked sessions", () => {
     const store = createSessionStore();
-    store.registerFromChatMessage({ agent: "fast", sessionID: "ses_d" }, dispatch("recon"), cfg, tierNames);
+    store.registerFromChatMessage({ agent: "fast", sessionID: "ses_d" }, dispatch("recon"), cfg, tierNames, "explore");
     const out: Record<string, unknown> = { output: "EDITED" };
     store.recordToolCall({ sessionID: "ses_d", tool: "edit", args: { file_path: "a.ts" } }, out);
     expect(out.output).toBe("EDITED");
@@ -123,7 +123,7 @@ describe("createSessionStore", () => {
 
   it("honors a CAP:N override from the dispatch text", () => {
     const store = createSessionStore();
-    store.registerFromChatMessage({ agent: "fast", sessionID: "ses_e" }, dispatch("tight lookup CAP:2"), cfg, tierNames);
+    store.registerFromChatMessage({ agent: "fast", sessionID: "ses_e" }, dispatch("tight lookup CAP:2"), cfg, tierNames, "explore");
     const o1: Record<string, unknown> = {};
     store.recordToolCall({ sessionID: "ses_e", tool: "read", args: { file_path: "a.ts" } }, o1);
     expect(o1.output).toContain("[cap: 1/2]");
@@ -134,7 +134,7 @@ describe("createSessionStore", () => {
 
   it("flags a redundant identical read", () => {
     const store = createSessionStore();
-    store.registerFromChatMessage({ agent: "medium", sessionID: "ses_f" }, dispatch("recon"), cfg, tierNames);
+    store.registerFromChatMessage({ agent: "medium", sessionID: "ses_f" }, dispatch("recon"), cfg, tierNames, "explore");
     const o1: Record<string, unknown> = {};
     store.recordToolCall({ sessionID: "ses_f", tool: "read", args: { file_path: "same.ts" } }, o1);
     expect(o1.output).not.toContain("REDUNDANT");
@@ -147,7 +147,7 @@ describe("createSessionStore", () => {
   it("falls back to DEFAULT_TIER_CAPS when cfg has no tierCaps", () => {
     const store = createSessionStore();
     const bareCfg = {} as unknown as RouterConfig;
-    store.registerFromChatMessage({ agent: "heavy", sessionID: "ses_g" }, dispatch("design"), bareCfg, tierNames);
+    store.registerFromChatMessage({ agent: "heavy", sessionID: "ses_g" }, dispatch("design"), bareCfg, tierNames, "explore");
     const out: Record<string, unknown> = {};
     store.recordToolCall({ sessionID: "ses_g", tool: "read", args: { file_path: "a.ts" } }, out);
     expect(out.output).toContain(`/${DEFAULT_TIER_CAPS.heavy}]`);
@@ -162,6 +162,7 @@ describe("createSessionStore", () => {
       { parts: ["please keep it tight CAP:4"] },
       cfg,
       tierNames,
+      "explore",
     );
     const out: Record<string, unknown> = {};
     store.recordToolCall({ sessionID: "ses_h", tool: "read", args: { file_path: "a.ts" } }, out);
@@ -175,6 +176,7 @@ describe("createSessionStore", () => {
       { parts: [{ content: "scoped lookup CAP:6" }] },
       cfg,
       tierNames,
+      "explore",
     );
     const out: Record<string, unknown> = {};
     store.recordToolCall({ sessionID: "ses_i", tool: "read", args: { file_path: "a.ts" } }, out);
@@ -188,6 +190,7 @@ describe("createSessionStore", () => {
       { parts: [{ irrelevant: true }], message: { content: "do it CAP:7" } },
       cfg,
       tierNames,
+      "explore",
     );
     const out: Record<string, unknown> = {};
     store.recordToolCall({ sessionID: "ses_j", tool: "read", args: { file_path: "a.ts" } }, out);
@@ -230,6 +233,7 @@ describe("createSessionStore — isTrivial", () => {
       dispatch("grep for the handler"),
       fullCfg,
       tierNames,
+      "explore",
     );
     expect(store.isTrivial("ses_triv1")).toBe(true);
   });
@@ -240,6 +244,7 @@ describe("createSessionStore — isTrivial", () => {
       dispatch("search the codebase"),
       fullCfg,
       tierNames,
+      "implementation",
     );
     expect(store.isTrivial("ses_triv2")).toBe(false);
   });
@@ -254,6 +259,7 @@ describe("createSessionStore — isTrivial", () => {
       dispatch("implement the feature"),
       fullCfg,
       tierNames,
+      "explore",
     );
     expect(store.isTrivial("ses_triv3")).toBe(false);
   });
@@ -262,7 +268,7 @@ describe("createSessionStore — isTrivial", () => {
 describe("registerProducerSession / unregister", () => {
   it("registers session: isSubagent=true, getTier=tier, isTrivial=false", () => {
     const store = createSessionStore();
-    store.registerProducerSession("prod_a", "medium", cfg);
+    store.registerProducerSession("prod_a", "medium", "explore", cfg);
     expect(store.isSubagent("prod_a")).toBe(true);
     expect(store.getTier("prod_a")).toBe("medium");
     expect(store.isTrivial("prod_a")).toBe(false);
@@ -271,7 +277,7 @@ describe("registerProducerSession / unregister", () => {
   it("cap baseline comes from cfg.tierCaps when present", () => {
     const customCfg = { tierCaps: { medium: 10 } } as unknown as RouterConfig;
     const store = createSessionStore();
-    store.registerProducerSession("prod_b", "medium", customCfg);
+    store.registerProducerSession("prod_b", "medium", "explore", customCfg);
     const out: Record<string, unknown> = {};
     store.recordToolCall({ sessionID: "prod_b", tool: "read", args: { file_path: "x.ts" } }, out);
     expect(out.output).toContain("1/10");
@@ -279,7 +285,7 @@ describe("registerProducerSession / unregister", () => {
 
   it("after unregister: isSubagent=false, getTier=null", () => {
     const store = createSessionStore();
-    store.registerProducerSession("prod_c", "heavy", cfg);
+    store.registerProducerSession("prod_c", "heavy", "explore", cfg);
     expect(store.isSubagent("prod_c")).toBe(true);
     store.unregister("prod_c");
     expect(store.isSubagent("prod_c")).toBe(false);
@@ -295,6 +301,7 @@ describe("createSessionStore — getTier", () => {
       dispatch("explore the repo"),
       cfg,
       tierNames,
+      "explore",
     );
     expect(store.getTier("ses_tier1")).toBe("fast");
   });
@@ -306,6 +313,7 @@ describe("createSessionStore — getTier", () => {
       dispatch("architecture review"),
       cfg,
       tierNames,
+      "architecture",
     );
     expect(store.getTier("ses_tier2")).toBe("heavy");
   });
@@ -322,6 +330,7 @@ describe("createSessionStore — getTier", () => {
       dispatch("do something"),
       cfg,
       tierNames,
+      null,
     );
     expect(store.getTier("ses_tier3")).toBeNull();
   });

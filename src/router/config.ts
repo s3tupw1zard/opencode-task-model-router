@@ -38,6 +38,7 @@ export type {
   RawConfigV2,
   RoleToolPolicy,
   ToolCategory,
+  UnknownToolPolicy,
 } from "./normalize";
 export { formatAgentName } from "./normalize";
 

@@ -33,7 +33,7 @@ describe("trajectory wiring (Phase 0.3, record-only)", () => {
     const msg = { agent: "fast", sessionID: "ses_ga1" };
     const dispatch = { parts: [{ text: "do recon" }] };
     await plugin["chat.message"](msg, dispatch);
-    ref.registerFromChatMessage(msg, dispatch, cfg, tierNames);
+    ref.registerFromChatMessage(msg, dispatch, cfg, tierNames, "explore");
 
     const toolInput = { sessionID: "ses_ga1", tool: "read", args: { file_path: "a.ts" } };
     const outPlugin: any = { output: "RESULT" };
